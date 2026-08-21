@@ -4,6 +4,7 @@ import {
   type SetAllCookies,
   type GetAllCookies,
 } from "@supabase/ssr";
+import { type SupabaseClient } from "@supabase/supabase-js";
 import { type Database } from "@/lib/supabase/types";
 
 /**
@@ -17,7 +18,7 @@ import { type Database } from "@/lib/supabase/types";
  */
 export async function createClient(
   cookieStore: ReturnType<typeof cookies>,
-): Promise<ReturnType<typeof createServerClient<Database>>> {
+): Promise<SupabaseClient<Database>> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -49,5 +50,9 @@ export async function createClient(
     },
   });
 
-  return client;
+  // `@supabase/ssr`'s return type is parameterized differently than the
+  // installed `@supabase/supabase-js` client, but the SSR client is a full
+  // typed SupabaseClient at runtime. Re-typing against our `Database` generic
+  // keeps query inference (rows, inserts, updates) strict.
+  return client as unknown as SupabaseClient<Database>;
 }

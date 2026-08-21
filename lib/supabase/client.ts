@@ -1,6 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import { type SupabaseClient } from "@supabase/supabase-js";
 import { type Database } from "@/lib/supabase/types";
 
 /**
@@ -11,7 +12,7 @@ import { type Database } from "@/lib/supabase/types";
  * side (see the `"use client"` directive above). Never expose the service role
  * key here.
  */
-export function createClient(): ReturnType<typeof createBrowserClient<Database>> {
+export function createClient(): SupabaseClient<Database> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -22,5 +23,8 @@ export function createClient(): ReturnType<typeof createBrowserClient<Database>>
     );
   }
 
-  return createBrowserClient<Database>(supabaseUrl, supabaseAnonKey);
+  return createBrowserClient<Database>(
+    supabaseUrl,
+    supabaseAnonKey,
+  ) as unknown as SupabaseClient<Database>;
 }
