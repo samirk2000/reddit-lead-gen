@@ -194,7 +194,11 @@ async function processKeyword(
   existingPostIds: Set<string>,
   summary: PipelineSummary,
 ): Promise<void> {
-  const posts = await fetchSubredditPosts(keyword.subreddit);
+  const posts = await fetchSubredditPosts(
+    keyword.subreddit,
+    undefined,
+    keyword.phrase,
+  );
   summary.fetched += posts.length;
 
   for (const post of posts) {
