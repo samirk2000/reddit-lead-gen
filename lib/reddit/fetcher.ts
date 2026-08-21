@@ -3,8 +3,10 @@
  *
  * Fetches posts from a subreddit via Reddit's public RSS feeds (`new.rss`)
  * instead of the JSON API, which requires a registered bot in Reddit's
- * Developer Portal, uses DOMParser-less native parsing via `rss-parser`, and
- * normalizes items into the typed shape the lead pipeline (and Gemini) consume.
+ * Developer Portal. Requests route through ScraperAPI (when a
+ * `SCRAPER_API_KEY` is set) to bypass IP-level 429/403 blocks, else are made
+ * directly and normalized via `rss-parser` into the typed shape the lead
+ * pipeline (and Gemini) consume.
  */
 
 import Parser from "rss-parser";
@@ -29,6 +31,11 @@ const REDDIT_HEADERS: Record<string, string> = {
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.5",
+};
+
+/** Minimal headers for the ScraperAPI proxy (key travels on the query string). */
+const SCRAPER_API_HEADERS: Record<string, string> = {
+  Accept: "application/xml, text/xml, */*;q=0.8",
 };
 
 /** Per-attempt max wait before aborting a single HTTP request. */
@@ -94,12 +101,19 @@ export async function fetchSubredditPosts(
 ): Promise<RedditPost[]> {
   const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
   const sub = subreddit.trim().replace(/^r\//, "") || "all";
-  const url = `https://www.reddit.com/r/${encodeURIComponent(
+  const rssUrl = `https://www.reddit.com/r/${encodeURIComponent(
     sub,
   )}/new.rss`;
 
+  // Route through ScraperAPI when a key is configured to avoid Reddit's
+  // IP-level 429/403 blocks; otherwise fetch the RSS directly.
+  const fetchUrl = toScraperApiUrl(rssUrl);
+  const headers = usesScraperApi(fetchUrl)
+    ? SCRAPER_API_HEADERS
+    : REDDIT_HEADERS;
+
   const response = await fetchWithRetry(() =>
-    fetchWithTimeout(url, REDDIT_HEADERS),
+    fetchWithTimeout(fetchUrl, headers),
   );
   if (!response.ok) {
     // A blocked/rate-limited subreddit shouldn't abort the pipeline.
@@ -122,6 +136,31 @@ export async function fetchSubredditPosts(
   }
 
   return mapRssItemsToPosts(feed.items ?? [], sub).slice(0, safeLimit);
+}
+
+/**
+ * Routes a target URL through ScraperAPI when `SCRAPER_API_KEY` is configured.
+ *
+ * @param targetUrl The original URL to scrape (e.g. a Reddit RSS feed).
+ * @returns         The ScraperAPI proxy URL, or the original URL unchanged when
+ *                  no API key is present in the environment.
+ */
+function toScraperApiUrl(targetUrl: string): string {
+  const apiKey = process.env.SCRAPER_API_KEY?.trim();
+  if (!apiKey) return targetUrl;
+
+  const params = new URLSearchParams({
+    api_key: apiKey,
+    url: targetUrl,
+  });
+  return `http://api.scraperapi.com?${params.toString()}`;
+}
+
+/**
+ * Whether a URL points at ScraperAPI (as opposed to a direct Reddit feed).
+ */
+function usesScraperApi(url: string): boolean {
+  return url.startsWith("http://api.scraperapi.com");
 }
 
 /**
