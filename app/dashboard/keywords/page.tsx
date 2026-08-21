@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { requireUserId } from "@/lib/supabase/session";
 import { KeywordsManager } from "@/components/dashboard/keywords-manager";
+import { DEFAULT_SUBREDDITS } from "@/lib/reddit/fetcher";
 
 export const metadata: Metadata = {
   title: "Keywords",
@@ -34,7 +35,10 @@ export default async function KeywordsPage() {
         Define qué frases monitorear en Reddit y en qué subreddits.
       </p>
 
-      <KeywordsManager keywords={keywords} />
+      <KeywordsManager
+        keywords={keywords}
+        defaultSubreddits={[...DEFAULT_SUBREDDITS]}
+      />
     </div>
   );
 }

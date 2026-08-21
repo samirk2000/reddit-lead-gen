@@ -28,7 +28,7 @@ import {
 const EMPTY_STATE: KeywordActionResult = { ok: false, message: "" };
 
 /** Switches between the single-add form and the bulk import form. */
-function AddKeywordForm() {
+function AddKeywordForm({ defaultSubreddits }: { defaultSubreddits: string[] }) {
   const [mode, setMode] = React.useState<"single" | "bulk">("single");
 
   return (
@@ -61,15 +61,22 @@ function AddKeywordForm() {
       </div>
 
       {mode === "single" ? (
-        <SingleAddForm />
+        <SingleAddForm defaultSubreddits={defaultSubreddits} />
       ) : (
-        <BulkImportForm onDone={() => setMode("single")} />
+        <BulkImportForm
+          defaultSubreddits={defaultSubreddits}
+          onDone={() => setMode("single")}
+        />
       )}
     </div>
   );
 }
 
-function SingleAddForm() {
+function SingleAddForm({
+  defaultSubreddits,
+}: {
+  defaultSubreddits: string[];
+}) {
   const [state, formAction] = useFormState(addKeyword, EMPTY_STATE);
   const { toast } = useToast();
   const shownRef = React.useRef<string | null>(null);
@@ -102,11 +109,25 @@ function SingleAddForm() {
           id="subreddit"
           name="subreddit"
           type="text"
+          list="subreddit-suggestions"
           placeholder="all"
         />
+        <SubredditSuggestions defaultSubreddits={defaultSubreddits} />
       </div>
       <SubmitAddButton />
     </form>
+  );
+}
+
+/** Renders a `<datalist>` of validated subreddits to attach to an input. */
+function SubredditSuggestions({ defaultSubreddits }: { defaultSubreddits: string[] }) {
+  return (
+    <datalist id="subreddit-suggestions">
+      <option value="all" />
+      {defaultSubreddits.map((s) => (
+        <option key={s} value={s} />
+      ))}
+    </datalist>
   );
 }
 
@@ -124,7 +145,13 @@ function SubmitAddButton() {
  * Bulk-import form. Parses one keyword per line and submits them together.
  * Clears the textarea and switches back to single-add mode on success.
  */
-function BulkImportForm({ onDone }: { onDone: () => void }) {
+function BulkImportForm({
+  onDone,
+  defaultSubreddits,
+}: {
+  onDone: () => void;
+  defaultSubreddits: string[];
+}) {
   const [state, formAction] = useFormState(bulkAddKeywords, EMPTY_STATE);
   const { toast } = useToast();
   const shownRef = React.useRef<string | null>(null);
@@ -173,8 +200,10 @@ function BulkImportForm({ onDone }: { onDone: () => void }) {
             id="defaultSubreddit"
             name="defaultSubreddit"
             type="text"
+            list="subreddit-suggestions"
             placeholder="all"
           />
+          <SubredditSuggestions defaultSubreddits={defaultSubreddits} />
         </div>
         <BulkSubmitButton />
       </div>
@@ -199,7 +228,13 @@ type KeywordItem = {
   is_active: boolean;
 };
 
-export function KeywordsManager({ keywords }: { keywords: KeywordItem[] }) {
+export function KeywordsManager({
+  keywords,
+  defaultSubreddits,
+}: {
+  keywords: KeywordItem[];
+  defaultSubreddits: string[];
+}) {
   const { toast } = useToast();
   const [busyId, setBusyId] = React.useState<string | null>(null);
 
@@ -224,7 +259,7 @@ export function KeywordsManager({ keywords }: { keywords: KeywordItem[] }) {
     <div className="mt-6 space-y-6">
       <Card>
         <CardContent className="pt-6">
-          <AddKeywordForm />
+          <AddKeywordForm defaultSubreddits={defaultSubreddits} />
           <p className="mt-2 text-xs text-muted-foreground">
             El subreddit por defecto es <span className="font-mono">all</span>{" "}
             (reddit completo). Indica uno específico, p.ej.{" "}

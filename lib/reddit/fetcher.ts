@@ -33,8 +33,22 @@ const REDDIT_HEADERS: Record<string, string> = {
   "Accept-Language": "en-US,en;q=0.5",
 };
 
-/** Minimal headers for the ScraperAPI proxy (key travels on the query string). */
+/** Public, active communities that serve RSS feeds reliably (IPTV/firestick niche). */
+export const DEFAULT_SUBREDDITS = [
+  "TiviMate",
+  "AndroidTV",
+  "FireStick",
+  "samsungtv",
+  "cordcutters",
+] as const;
+
+/**
+ * Minimal headers for the ScraperAPI proxy. The key travels on the query
+ * string, but we still pass a real browser User-Agent so Reddit doesn't treat
+ * the downstream request as a bare datacenter bot.
+ */
 const SCRAPER_API_HEADERS: Record<string, string> = {
+  "User-Agent": REDDIT_USER_AGENT,
   Accept: "application/xml, text/xml, */*;q=0.8",
 };
 
@@ -107,10 +121,15 @@ export async function fetchSubredditPosts(
   _keyword?: string,
 ): Promise<RedditPost[]> {
   const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
-  const sub = subreddit.trim().replace(/^r\//, "") || "all";
-  const rssUrl = `https://old.reddit.com/r/${encodeURIComponent(
+
+  // Normalize to a bare sub name; default to a known-active community.
+  const sub =
+    subreddit.trim().replace(/^r\//, "") || DEFAULT_SUBREDDITS[0] || "TiviMate";
+  // Reddit serves RSS at the `/new/.rss` endpoint; keep the trailing `.rss`
+  // so ScraperAPI requests the feed and not the HTML site.
+  const rssUrl = `https://www.reddit.com/r/${encodeURIComponent(
     sub,
-  )}/new.rss`;
+  )}/new/.rss`;
 
   // Route through ScraperAPI when a key is configured to avoid Reddit's
   // IP-level 429/403 blocks; otherwise fetch the RSS directly.
@@ -207,6 +226,11 @@ function sanitizeXml(xml: string): string {
 /**
  * Routes a target URL through ScraperAPI when `SCRAPER_API_KEY` is configured.
  *
+ * Adds anti-block evasion flags so Reddit doesn't deliver an HTML block page:
+ * `premium=true` uses residential/proxy pool and `render=true` forces a
+ * browser-rendered response. The target URL is passed cleanly (single-encoded)
+ * via `URLSearchParams`.
+ *
  * @param targetUrl The original URL to scrape (e.g. a Reddit RSS feed).
  * @returns         The ScraperAPI proxy URL, or the original URL unchanged when
  *                  no API key is present in the environment.
@@ -218,6 +242,9 @@ function toScraperApiUrl(targetUrl: string): string {
   const params = new URLSearchParams({
     api_key: apiKey,
     url: targetUrl,
+    // Evade datacenter-IP blocking: premium residential pool + rendered page.
+    premium: "true",
+    render: "true",
   });
   return `http://api.scraperapi.com?${params.toString()}`;
 }
