@@ -42,12 +42,26 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
+/**
+ * Minimum intent score for a lead to count as a real opportunity on the default
+ * "Todos" tab. Lower-scored leads are only shown under "Archivados".
+ */
+const MIN_OPPORTUNITY_SCORE = 7;
+
+/** Whether a lead is a real-enough opportunity to surface on "Todos". */
+function isOpportunity(lead: LeadView): boolean {
+  // Override: anything already acted on (notified/replied) stays visible.
+  if (lead.status === "notified" || lead.status === "replied") return true;
+  return lead.intent_score !== null && lead.intent_score >= MIN_OPPORTUNITY_SCORE;
+}
+
 export function LeadList({ leads }: LeadListProps) {
   const [tab, setTab] = React.useState<TabKey>("all");
   const { toast } = useToast();
   const [busyId, setBusyId] = React.useState<string | null>(null);
 
-  const filtered = tab === "all" ? leads : leads.filter((l) => l.status === tab);
+  const filtered =
+    tab === "all" ? leads.filter(isOpportunity) : leads.filter((l) => l.status === tab);
 
   async function changeStatus(id: string, status: "replied" | "archived") {
     setBusyId(id);
@@ -140,7 +154,7 @@ function TabBar({
 
 function countByTab(leads: LeadView[]): Record<string, number> {
   const counts: Record<string, number> = {
-    all: leads.length,
+    all: leads.filter(isOpportunity).length,
     notified: 0,
     replied: 0,
     archived: 0,

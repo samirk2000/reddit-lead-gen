@@ -369,11 +369,27 @@ async function notifyUser(
   }
 }
 
-/** Case-insensitive keyword match against title or content. */
+/**
+ * Case-insensitive, whole-word keyword match against a post's title/content.
+ *
+ * Uses regex word boundaries (`\b`) so a keyword like "app" does NOT match
+ * inside "Sapphic" or "Application". Multi-word phrases (e.g. "iptv app") match
+ * only as the same contiguous text.
+ */
 function matchesKeyword(post: RedditPost, phrase: string): boolean {
-  const needle = phrase.toLowerCase();
-  const haystack = `${post.title}\n${post.content ?? ""}`.toLowerCase();
-  return haystack.includes(needle);
+  const haystack = `${post.title}\n${post.content ?? ""}`;
+  const escaped = escapeRegExp(phrase.trim());
+  if (!escaped) return false;
+
+  // `\b` at both ends anchors the match to word boundaries. Multi-word phrases
+  // like "iptv app" then match only when that exact contiguous text appears.
+  const regex = new RegExp(`\\b${escaped}\\b`, "i");
+  return regex.test(haystack);
+}
+
+/** Escapes regex metacharacters so a literal user keyword is matched verbatim. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Truncates a string for compact console logging. */

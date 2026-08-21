@@ -16,16 +16,19 @@ const MAX_SUBREDDIT_LENGTH = 100;
 
 /**
  * Broad, common keywords used to quickly bootstrap a test account so a manual
- * scan matches something. These are deliberately generic to exercise the
- * match + AI-scoring path end to end.
+ * scan matches something. Generic enough to exercise the match + AI-scoring
+ * path, but "app" is deliberately replaced with higher-intent compound phrases
+ * to avoid noisy low-signal matches.
  */
 const TEST_KEYWORDS = [
   "remote",
   "setup",
-  "app",
-  "player",
   "recommend",
   "best",
+  "iptv app",
+  "player app",
+  "tv app",
+  "best app",
 ];
 
 const TEST_SUBREDDIT = "all";
