@@ -1,0 +1,27 @@
+# Reddit Lead Gen SaaS - Cursor Rules & Technical Constraints
+
+## Stack Architecture
+- Framework: Next.js 14+ (App Router, React Server Components, Server Actions).
+- DB & Auth: Supabase (PostgreSQL, Row Level Security, Supabase SSR Auth).
+- AI Engine: `@google/genai` (Gemini SDK) usando exclusivamente el modelo `gemini-2.5-flash`.
+- Styling: TailwindCSS + Shadcn/ui.
+- Typescript: Strictest mode. Manual types derived from Supabase DB schema.
+
+## Coding Standards & Rules
+1. Next.js App Router:
+   - Default to React Server Components (RSC). Use `'use client'` strictly for interactivity.
+   - Use Server Actions for data mutations inside `app/actions/`.
+   - Never expose API secret keys (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`) on the client side.
+
+2. Database & Supabase:
+   - Always instantiate Supabase client using `@supabase/ssr` helpers (`createClient` for server/client).
+   - Enforce Type Safety: Use generated Supabase types in all queries.
+   - Handle RLS explicitly; ensure user queries filter by `auth.uid()`.
+
+3. Gemini SDK (`@google/genai`):
+   - Always set `responseSchema` and `responseMimeType: "application/json"` in `generationConfig` when structured analysis is needed.
+   - Handle rate limits (429) gracefully with exponential backoff logic.
+
+4. Code Integrity:
+   - NO placeholders, NO `// TODO: implement later`. Provide full working implementations.
+   - Fail early with explicit error catching and log useful metadata.
