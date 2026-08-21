@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check-subreddits": "node --experimental-strip-types scripts/check-subreddits.ts"
   },
   "dependencies": {
     "@google/genai": "^2.18.0",

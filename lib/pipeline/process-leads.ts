@@ -96,8 +96,17 @@ export async function runLeadGenerationPipelineForUser(
 /** Max concurrent subreddit fetches. Kept low to respect rate limits. */
 const MAX_CONCURRENT_SUBREDDITS = 2;
 
-/** Subreddits known to 404 / be dead; skip to avoid wasting API credits. */
-const BLOCKED_SUBREDDITS = new Set(["iptv", "iptvreviews", "firestickhacks"]);
+/**
+ * Subreddits known to 404 / be dead; skip to avoid wasting API credits.
+ *
+ * These are not part of the active target list but may still be referenced by
+ * legacy keyword rows in the database, so they are blocked here to prevent
+ * burning a ScraperAPI credit on a 404. `iptv` was validated-activo by
+ * `npm run check-subreddits`, so it was removed from this set (it is now part
+ * of `DEFAULT_SUBREDDITS`). `firestickhacks` was removed entirely (verified
+ * nonexistent).
+ */
+const BLOCKED_SUBREDDITS = new Set(["iptvreviews"]);
 
 /** Normalizes a subreddit to a lowercase bare name (no `r/` prefix). */
 function normalizeSubreddit(subreddit: string): string {

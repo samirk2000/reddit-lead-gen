@@ -37,13 +37,20 @@ const REDDIT_HEADERS: Record<string, string> = {
   "Accept-Language": "en-US,en;q=0.5",
 };
 
-/** Public, active communities that serve RSS feeds reliably (IPTV/firestick niche). */
+/**
+ * Active, focused communities for players & streaming devices (IPTV/firestick
+ * niche). All names are bare/sanitized (no spaces, no `r/` prefix) to avoid
+ * false-404s. Validated-activo by the `npm run check-subreddits` diagnostic.
+ */
 export const DEFAULT_SUBREDDITS = [
+  "firetvstick",
+  "smartersiptv",
   "TiviMate",
   "AndroidTV",
-  "FireStick",
-  "samsungtv",
   "cordcutters",
+  "Stremio",
+  "sideloaded",
+  "iptv",
 ] as const;
 
 /**
