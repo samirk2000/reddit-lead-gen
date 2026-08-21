@@ -22,6 +22,7 @@ import {
   bulkAddKeywords,
   deleteKeyword,
   toggleKeyword,
+  seedTestKeywords,
   type KeywordActionResult,
 } from "@/app/actions/keywords";
 
@@ -221,6 +222,35 @@ function BulkSubmitButton() {
   );
 }
 
+/**
+ * One-click button that seeds the broad test keywords via `seedTestKeywords`.
+ * Runs inside `useTransition` so the server action never blocks the thread.
+ */
+function SeedTestKeywordsButton() {
+  const { toast } = useToast();
+  const [isPending, startTransition] = React.useTransition();
+
+  function handleClick() {
+    startTransition(async () => {
+      const result = await seedTestKeywords();
+      toast(result.message, result.ok ? "success" : "error");
+    });
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={isPending}
+      onClick={handleClick}
+    >
+      {isPending ? <Spinner /> : <Plus className="size-4" />}
+      {isPending ? "Sembrando…" : "Sembrar keywords de prueba"}
+    </Button>
+  );
+}
+
 type KeywordItem = {
   id: string;
   phrase: string;
@@ -258,9 +288,20 @@ export function KeywordsManager({
   return (
     <div className="mt-6 space-y-6">
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                Agregar keywords
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Palabras clave amplias (remote, setup, app, …) para pruebas.
+              </p>
+            </div>
+            <SeedTestKeywordsButton />
+          </div>
           <AddKeywordForm defaultSubreddits={defaultSubreddits} />
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             El subreddit por defecto es <span className="font-mono">all</span>{" "}
             (reddit completo). Indica uno específico, p.ej.{" "}
             <span className="font-mono">marketing</span>, para limitar la

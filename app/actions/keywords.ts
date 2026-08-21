@@ -15,6 +15,22 @@ const MAX_PHRASE_LENGTH = 200;
 const MAX_SUBREDDIT_LENGTH = 100;
 
 /**
+ * Broad, common keywords used to quickly bootstrap a test account so a manual
+ * scan matches something. These are deliberately generic to exercise the
+ * match + AI-scoring path end to end.
+ */
+const TEST_KEYWORDS = [
+  "remote",
+  "setup",
+  "app",
+  "player",
+  "recommend",
+  "best",
+];
+
+const TEST_SUBREDDIT = "all";
+
+/**
  * Adds a new keyword for the current user.
  *
  * @param prevState Unused, kept for the `useActionState` signature.
@@ -107,6 +123,55 @@ export async function toggleKeyword(
 
   revalidatePath("/dashboard/keywords");
   revalidatePath("/dashboard");
+}
+
+/**
+ * Seeds broad test keywords for the current user, skipping any phrase/subreddit
+ * combination they already have. Useful to bootstrap a test account for a
+ * manual scan without typing each keyword by hand.
+ */
+export async function seedTestKeywords(): Promise<KeywordActionResult> {
+  const userId = await requireUserId();
+  const supabase = await createClient(cookies());
+
+  // Load existing phrases (all subreddits) so we don't create duplicates.
+  const { data: existing, error: loadError } = await supabase
+    .from("keywords")
+    .select("phrase, subreddit")
+    .eq("user_id", userId);
+
+  if (loadError) {
+    console.error("[keywords] seedTestKeywords: no se pudo leer keywords:", loadError);
+    return { ok: false, message: "No se pudieron leer las keywords existentes." };
+  }
+
+  const have = new Set(
+    (existing ?? []).map((k) => `${k.phrase.toLowerCase()}|${k.subreddit.toLowerCase()}`),
+  );
+
+  const rows = TEST_KEYWORDS.filter(
+    (phrase) => !have.has(`${phrase.toLowerCase()}|${TEST_SUBREDDIT}`),
+  ).map((phrase) => ({
+    user_id: userId,
+    phrase,
+    subreddit: TEST_SUBREDDIT,
+    is_active: true,
+  }));
+
+  if (rows.length === 0) {
+    return { ok: true, message: "Ya tenías todas las keywords de prueba." };
+  }
+
+  const { error } = await supabase.from("keywords").insert(rows);
+
+  if (error) {
+    console.error("[keywords] seedTestKeywords falló:", error);
+    return { ok: false, message: "No se pudo sembrar las keywords de prueba." };
+  }
+
+  revalidatePath("/dashboard/keywords");
+  revalidatePath("/dashboard");
+  return { ok: true, message: `${rows.length} keywords de prueba agregadas.` };
 }
 
 /**

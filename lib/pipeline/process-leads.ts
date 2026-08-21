@@ -273,6 +273,12 @@ async function processSubreddit(
         apiKey,
       );
 
+      // Surface matches + AI score in the console so a manual scan is easy to
+      // eyeball: which post matched which keyword and how Gemini scored intent.
+      console.log(
+        `[AI] Post "${truncate(post.title)}" match con keyword "${keyword.phrase}" -> Score: ${analysis.intent_score}/10`,
+      );
+
       const status = analysis.intent_score >= ALERT_INTENT_SCORE
         ? "notified"
         : "archived";
@@ -354,6 +360,12 @@ function matchesKeyword(post: RedditPost, phrase: string): boolean {
   const needle = phrase.toLowerCase();
   const haystack = `${post.title}\n${post.content ?? ""}`.toLowerCase();
   return haystack.includes(needle);
+}
+
+/** Truncates a string for compact console logging. */
+function truncate(value: string, maxLen: number = 80): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  return clean.length > maxLen ? `${clean.slice(0, maxLen)}…` : clean;
 }
 
 /** Aggregated counters returned to the trigger caller. */
