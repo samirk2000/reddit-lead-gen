@@ -77,6 +77,15 @@ const REQUEST_GAP_MAX_MS = 2000;
 /** Max RSS items to keep per subreddit feed. */
 const DEFAULT_FEED_LIMIT = 25;
 
+/** TTL for the in-memory subreddit feed cache (5 minutes). */
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * In-memory cache of recently fetched subreddit feeds so we don't burn a
+ * ScraperAPI credit re-fetching the same subreddit within the TTL window.
+ */
+const feedCache = new Map<string, { posts: RedditPost[]; expiresAt: number }>();
+
 /** Re-usable RSS parser instance (stateless once configured). */
 const rssParser = new Parser<{ [key: string]: unknown }, RedditRssItem>({
   // Expose the raw content string so we can strip Reddit's SC_ON/SC_OFF markers.
@@ -125,6 +134,28 @@ export async function fetchSubredditPosts(
   // Normalize to a bare sub name; default to a known-active community.
   const sub =
     subreddit.trim().replace(/^r\//, "") || DEFAULT_SUBREDDITS[0] || "TiviMate";
+
+  // Serve from the in-memory cache when fresh (5m TTL) to save ScraperAPI
+  // credits on repeated scans of the same subreddit.
+  const cached = feedCache.get(sub);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.posts.slice(0, safeLimit);
+  }
+
+  const posts = await fetchSubredditFeed(sub, safeLimit);
+
+  // Cache the result (even empty/blocked feeds, so we don't immediately retry
+  // a subreddit that transiently failed within the TTL window).
+  feedCache.set(sub, { posts, expiresAt: Date.now() + CACHE_TTL_MS });
+
+  return posts;
+}
+
+/**
+ * Performs the actual networked fetch + parse for a single subreddit. Callers
+ * wrap this with the in-memory cache (see `fetchSubredditPosts`).
+ */
+async function fetchSubredditFeed(sub: string, safeLimit: number): Promise<RedditPost[]> {
   // Reddit serves RSS at the `/new/.rss` endpoint; keep the trailing `.rss`
   // so ScraperAPI requests the feed and not the HTML site.
   const rssUrl = `https://www.reddit.com/r/${encodeURIComponent(

@@ -15,13 +15,14 @@ const ALERT_INTENT_SCORE = 7;
 /**
  * Runs the full lead-generation pipeline for a single user.
  *
- * Flow:
- *   1. Load the user's credentials (`telegram_bot_token`, `telegram_chat_id`,
- *      `gemini_api_key`) from `user_settings`.
- *   2. Load the user's active keywords.
- *   3. For every keyword/subreddit combo: fetch new posts, dedupe against
- *      `detected_leads`, keyword-filter, run Gemini analysis, then save with
- *      status `notified` (plus Telegram alert) when score >= 7, else `archived`.
+ * Cost-optimized flow:
+ *   1. Load the user's credentials and active keywords.
+ *   2. Global dedupe of subreddits: group keywords by unique (normalized)
+ *      subreddit so we fetch each subreddit's RSS ONCE per scan.
+ *   3. Drop known-dead subreddits early (e.g. r/IPTV, r/IPTVReviews) that 404
+ *      and would waste a ScraperAPI credit.
+ *   4. For each subreddit: fetch the feed once (in-memory cached for 5 min),
+ *      then keyword-filter locally and run Gemini on matching posts.
  *
  * @param userId The authenticated user's UUID.
  * @returns      A summary of posts fetched, stored, alerted, and skipped.
@@ -55,29 +56,32 @@ export async function runLeadGenerationPipelineForUser(
     skippedFilter: 0,
   };
 
-  // Process all keyword/subreddit scans concurrently with a bounded concurrency
-  // so a single slow or failing subreddit doesn't block the rest, while still
-  // capping simultaneous Reddit/Gemini calls to avoid hammering external APIs.
+  // Group active keywords by normalized subreddit, skipping dead subreddits.
+  const bySubreddit = groupKeywordsBySubreddit(keywords);
+
+  // Process each unique subreddit concurrently (1 fetch each, cached), with a
+  // bounded concurrency to avoid hammering external APIs.
+  const entries = [...bySubreddit.entries()];
   const results = await mapWithConcurrency(
-    keywords,
-    (keyword) =>
-      processKeyword(
+    entries,
+    ([_sub, subsKeywords]) =>
+      processSubreddit(
         supabase,
         userId,
-        keyword,
+        subsKeywords,
         settings,
         existingPostIds,
         summary,
       ),
-    MAX_CONCURRENT_KEYWORDS,
+    MAX_CONCURRENT_SUBREDDITS,
   );
 
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
     if (result && result.status === "rejected") {
-      const keyword = keywords[i];
+      const sub = entries[i]?.[0];
       console.error(
-        `[pipeline] Error procesando keyword "${keyword?.phrase ?? "?"}" de r/${keyword?.subreddit ?? "?"} para ${userId}:`,
+        `[pipeline] Error procesando r/${sub ?? "?"} para ${userId}:`,
         result.reason,
       );
     }
@@ -86,9 +90,49 @@ export async function runLeadGenerationPipelineForUser(
   return summary;
 }
 
-/** Max N subreddit scans running at the same time. Kept low (2-3) to avoid
- * triggering Reddit/PullPush rate limits with parallel scrape bursts. */
-const MAX_CONCURRENT_KEYWORDS = 2;
+/** Max concurrent subreddit fetches. Kept low to respect rate limits. */
+const MAX_CONCURRENT_SUBREDDITS = 2;
+
+/** Subreddits known to 404 / be dead; skip to avoid wasting API credits. */
+const BLOCKED_SUBREDDITS = new Set(["iptv", "iptvreviews"]);
+
+/** Normalizes a subreddit to a lowercase bare name (no `r/` prefix). */
+function normalizeSubreddit(subreddit: string): string {
+  return subreddit.trim().replace(/^r\//, "").toLowerCase() || "all";
+}
+
+/**
+ * Groups active keywords by their normalized subreddit, dropping subreddits
+ * that are known to be dead/invalid so we never spend a credit on them.
+ *
+ * @returns A `Map` of normalized subreddit -> its keywords.
+ */
+function groupKeywordsBySubreddit(
+  keywords: Pick<Keyword, "id" | "phrase" | "subreddit">[],
+): Map<string, Pick<Keyword, "id" | "phrase" | "subreddit">[]> {
+  const groups = new Map<
+    string,
+    Pick<Keyword, "id" | "phrase" | "subreddit">[]
+  >();
+
+  for (const keyword of keywords) {
+    const sub = normalizeSubreddit(keyword.subreddit);
+    if (BLOCKED_SUBREDDITS.has(sub)) {
+      console.warn(
+        `[pipeline] Se omite r/${sub} (subreddit no válido/404) para evitar gastar crédito.`,
+      );
+      continue;
+    }
+    const list = groups.get(sub);
+    if (list) {
+      list.push(keyword);
+    } else {
+      groups.set(sub, [keyword]);
+    }
+  }
+
+  return groups;
+}
 
 /**
  * Maps an array through an async worker with a bounded concurrency limit.
@@ -186,69 +230,75 @@ async function loadExistingPostIds(
   return new Set((data ?? []).map((row) => row.reddit_post_id));
 }
 
-/** Processes one keyword/subreddit combination and mutates `summary`. */
-async function processKeyword(
+/**
+ * Processes one unique subreddit. Does a SINGLE fetch of its RSS feed (backed
+ * by the 5-minute in-memory cache) and then filters the posts locally against
+ * each keyword that targets this subreddit, so one ScraperAPI credit covers
+ * every keyword for it. Mutates `summary`.
+ */
+async function processSubreddit(
   supabase: SupabaseServiceClient,
   userId: string,
-  keyword: Pick<Keyword, "id" | "phrase" | "subreddit">,
+  keywords: Pick<Keyword, "id" | "phrase" | "subreddit">[],
   settings: Partial<UserSettings>,
   existingPostIds: Set<string>,
   summary: PipelineSummary,
 ): Promise<void> {
-  const posts = await fetchSubredditPosts(
-    keyword.subreddit,
-    undefined,
-    keyword.phrase,
-  );
+  if (keywords.length === 0) return;
+
+  // ONE networked fetch per subreddit (cached in-memory for 5 min).
+  const posts = await fetchSubredditPosts(keywords[0]!.subreddit);
   summary.fetched += posts.length;
 
-  for (const post of posts) {
-    if (existingPostIds.has(post.reddit_post_id)) {
-      summary.skippedDedupe++;
-      continue; // already processed
-    }
+  for (const keyword of keywords) {
+    for (const post of posts) {
+      if (existingPostIds.has(post.reddit_post_id)) {
+        summary.skippedDedupe++;
+        continue; // already processed
+      }
 
-    if (!matchesKeyword(post, keyword.phrase)) {
-      summary.skippedFilter++;
-      continue; // no keyword match
-    }
+      if (!matchesKeyword(post, keyword.phrase)) {
+        summary.skippedFilter++;
+        continue; // no keyword match
+      }
 
-    // Resolve per-user API key: settings.gemini_api_key first, env fallback
-    // handled inside analyzeRedditPost.
-    const apiKey = settings.gemini_api_key ?? undefined;
+      // Resolve per-user API key: settings.gemini_api_key first, env fallback
+      // handled inside analyzeRedditPost.
+      const apiKey = settings.gemini_api_key ?? undefined;
 
-    const analysis = await analyzeRedditPost(
-      post.title,
-      post.content ?? "",
-      keyword.phrase,
-      apiKey,
-    );
+      const analysis = await analyzeRedditPost(
+        post.title,
+        post.content ?? "",
+        keyword.phrase,
+        apiKey,
+      );
 
-    const status = analysis.intent_score >= ALERT_INTENT_SCORE
-      ? "notified"
-      : "archived";
+      const status = analysis.intent_score >= ALERT_INTENT_SCORE
+        ? "notified"
+        : "archived";
 
-    const lead = await saveLead(supabase, {
-      user_id: userId,
-      keyword_id: keyword.id,
-      reddit_post_id: post.reddit_post_id,
-      title: post.title,
-      content: post.content,
-      author: post.author,
-      post_url: post.post_url,
-      subreddit: post.subreddit,
-      intent_score: analysis.intent_score,
-      analysis_reasoning: analysis.analysis_reasoning,
-      suggested_reply: analysis.suggested_reply,
-      status,
-    });
+      const lead = await saveLead(supabase, {
+        user_id: userId,
+        keyword_id: keyword.id,
+        reddit_post_id: post.reddit_post_id,
+        title: post.title,
+        content: post.content,
+        author: post.author,
+        post_url: post.post_url,
+        subreddit: post.subreddit,
+        intent_score: analysis.intent_score,
+        analysis_reasoning: analysis.analysis_reasoning,
+        suggested_reply: analysis.suggested_reply,
+        status,
+      });
 
-    summary.stored++;
-    existingPostIds.add(post.reddit_post_id);
+      summary.stored++;
+      existingPostIds.add(post.reddit_post_id);
 
-    if (status === "notified") {
-      await notifyUser(settings, lead, keyword.phrase);
-      summary.alerted++;
+      if (status === "notified") {
+        await notifyUser(settings, lead, keyword.phrase);
+        summary.alerted++;
+      }
     }
   }
 }
