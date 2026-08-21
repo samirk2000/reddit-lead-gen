@@ -94,7 +94,7 @@ export async function runLeadGenerationPipelineForUser(
 const MAX_CONCURRENT_SUBREDDITS = 2;
 
 /** Subreddits known to 404 / be dead; skip to avoid wasting API credits. */
-const BLOCKED_SUBREDDITS = new Set(["iptv", "iptvreviews"]);
+const BLOCKED_SUBREDDITS = new Set(["iptv", "iptvreviews", "firestickhacks"]);
 
 /** Normalizes a subreddit to a lowercase bare name (no `r/` prefix). */
 function normalizeSubreddit(subreddit: string): string {

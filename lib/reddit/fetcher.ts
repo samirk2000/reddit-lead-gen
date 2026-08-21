@@ -5,8 +5,12 @@
  * instead of the JSON API, which requires a registered bot in Reddit's
  * Developer Portal. Requests route through ScraperAPI (when a
  * `SCRAPER_API_KEY` is set) to bypass IP-level 429/403 blocks, else are made
- * directly and normalized via `rss-parser` into the typed shape the lead
+ * directly. Normalized via `rss-parser` into the typed shape the lead
  * pipeline (and Gemini) consume.
+ *
+ * Resilience: timeouts/rate-limits are retried with backoff (max 2 retries),
+ * and when the ScraperAPI premium path fails or times out we fall back to a
+ * direct fetch to Reddit with a browser User-Agent before skipping a sub.
  */
 
 import Parser from "rss-parser";
@@ -57,15 +61,24 @@ const FETCH_TIMEOUT_MS = 5000;
 
 /**
  * Per-attempt max wait (ms) when routing through ScraperAPI, which needs time
- * to rotate IPs and warm up before responding (30s to avoid premature aborts).
+ * to rotate IPs and warm up before responding. Premium responses commonly take
+ * 10-20s; a 30s ceiling avoids premature aborts while not hanging the scan.
+ * Overridable via `SCRAPER_API_TIMEOUT_MS`.
  */
-const FETCH_TIMEOUT_MS_SCRAPER_API = 30000;
+const FETCH_TIMEOUT_MS_SCRAPER_API = parseTimeoutEnv(
+  process.env.SCRAPER_API_TIMEOUT_MS,
+  30000,
+);
 
 /** Rate-limit statuses we treat as retryable via exponential backoff. */
 const RETRYABLE_STATUS = new Set([429, 403, 503]);
 
-/** Max retries for rate-limited/transient requests (besides the first call). */
-const MAX_RETRIES = 3;
+/**
+ * Max retries for retryable outcomes (rate-limited responses + timeouts),
+ * besides the first attempt. Kept low so a dead subreddit doesn't stall the
+ * scan: status/response retries follow this cap too.
+ */
+const MAX_RETRIES = 2;
 
 /** Base backoff (ms) doubled on each retry: 1000, 2000, 4000. */
 const BACKOFF_BASE_MS = 1000;
@@ -114,7 +127,7 @@ async function throttleNextRequest(): Promise<void> {
 /**
  * Fetches the newest posts of a subreddit using Reddit's public RSS feed.
  *
- * Uses `old.reddit.com/r/{sub}/new.rss` (no Developer Portal registration
+ * Uses `www.reddit.com/r/{sub}/new.rss` (no Developer Portal registration
  * required) with real browser-style headers. Requests are spaced 1.5-2s apart,
  * rate-limited responses are retried with exponential backoff, and requests
  * route through ScraperAPI (with a 30s timeout) when a key is configured.
@@ -131,9 +144,9 @@ export async function fetchSubredditPosts(
 ): Promise<RedditPost[]> {
   const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
 
-  // Normalize to a bare sub name; default to a known-active community.
-  const sub =
-    subreddit.trim().replace(/^r\//, "") || DEFAULT_SUBREDDITS[0] || "TiviMate";
+  // Normalize a bare, clean sub name (no spaces, no `r/` prefix, trimmed);
+  // default to a known-active community when the input is empty/blank.
+  const sub = normalizeSubname(subreddit) || DEFAULT_SUBREDDITS[0] || "TiviMate";
 
   // Serve from the in-memory cache when fresh (5m TTL) to save ScraperAPI
   // credits on repeated scans of the same subreddit.
@@ -154,47 +167,102 @@ export async function fetchSubredditPosts(
 /**
  * Performs the actual networked fetch + parse for a single subreddit. Callers
  * wrap this with the in-memory cache (see `fetchSubredditPosts`).
+ *
+ * The subreddit name is expected to be already normalized (bare, no spaces, no
+ * `r/` prefix) by `fetchSubredditPosts`.
  */
 async function fetchSubredditFeed(sub: string, safeLimit: number): Promise<RedditPost[]> {
-  // Reddit serves RSS at the `/new/.rss` endpoint; keep the trailing `.rss`
-  // so ScraperAPI requests the feed and not the HTML site.
+  // Reddit serves RSS at `/new.rss`; keep the trailing `.rss` so ScraperAPI
+  // requests the feed and not the HTML site. Tested empirically: `www` (not
+  // `old`) consistently returns the raw XML through ScraperAPI premium — `old`
+  // would return the rendered HTML block page instead.
   const rssUrl = `https://www.reddit.com/r/${encodeURIComponent(
     sub,
-  )}/new/.rss`;
+  )}/new.rss`;
 
-  // Route through ScraperAPI when a key is configured to avoid Reddit's
-  // IP-level 429/403 blocks; otherwise fetch the RSS directly.
-  const fetchUrl = toScraperApiUrl(rssUrl);
-  const viaProxy = usesScraperApi(fetchUrl);
-  const headers = viaProxy ? SCRAPER_API_HEADERS : REDDIT_HEADERS;
-  const timeoutMs = viaProxy ? FETCH_TIMEOUT_MS_SCRAPER_API : FETCH_TIMEOUT_MS;
+  if (process.env.SCRAPER_API_KEY?.trim()) {
+    const viaProxy = await fetchSubredditFeedOnce(
+      rssUrl,
+      SCRAPER_API_HEADERS,
+      FETCH_TIMEOUT_MS_SCRAPER_API,
+      true, // wrap in ScraperAPI (premium) proxy
+      safeLimit,
+    );
+    if (viaProxy.status === "ok") {
+      return viaProxy.posts;
+    }
+    console.warn(
+      `[reddit] ScraperAPI falló para r/${sub}; reintentando por fetch directo.`,
+    );
+  }
 
-  const response = await fetchWithRetry(() =>
-    fetchWithTimeout(fetchUrl, headers, timeoutMs),
+  // Fallback (or primary when no key): direct fetch to Reddit with a real
+  // browser User-Agent. Reddit may 429/403 datacenter IPs, but it's a free,
+  // cheap resilience net when the premium pool fails or times out.
+  const direct = await fetchSubredditFeedOnce(
+    rssUrl,
+    REDDIT_HEADERS,
+    FETCH_TIMEOUT_MS,
+    false,
+    safeLimit,
   );
+  return direct.posts;
+}
+
+/**
+ * Attempts one strategy (ScraperAPI or direct) for a subreddit feed and returns
+ * the parsed posts, or `{ status: "ok"|"fail" }`. The retry policy and
+ * ScraperAPI->direct handoff live in the caller (`fetchSubredditFeed`).
+ */
+async function fetchSubredditFeedOnce(
+  targetUrl: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  viaProxy: boolean,
+  safeLimit: number,
+): Promise<{ status: "ok" | "fail"; posts: RedditPost[] }> {
+  let fetchUrl = targetUrl;
+  if (viaProxy) {
+    fetchUrl = toScraperApiUrl(targetUrl);
+  }
+
+  let response: Response;
+  try {
+    // Retries rate-limits (429/403/503) and timeouts internally; network
+    // errors timeouts are retried, then thrown so we can fall back.
+    response = await fetchWithRetry(() =>
+      fetchWithTimeout(fetchUrl, headers, timeoutMs),
+    );
+  } catch (error) {
+    console.warn(
+      `[reddit] ${viaProxy ? "ScraperAPI" : "Fetch directo"} sin éxito para r/${extractSubFromUrl(targetUrl)} tras reintentos:`,
+      error,
+    );
+    return { status: "fail", posts: [] };
+  }
 
   // 1. Validate HTTP status: treat any non-OK response (404, 403, 429, 5xx…)
   // as a per-subreddit failure — log it and skip without aborting the pipeline.
   if (!response.ok) {
     console.warn(
-      `[reddit] r/${sub} respondió ${response.status}; se omite el subreddit.`,
+      `[reddit] r/${extractSubFromUrl(targetUrl)} respondió ${response.status} via ${viaProxy ? "ScraperAPI" : "directo"}; se omite el subreddit.`,
     );
-    return [];
+    return { status: "fail", posts: [] };
   }
 
   const xmlRaw = await response.text();
   if (!xmlRaw.trim()) {
-    console.warn(`[reddit] Feed vacío para r/${sub}.`);
-    return [];
+    console.warn(`[reddit] Feed vacío para el subreddit.`);
+    return { status: "fail", posts: [] };
   }
 
   // 2. Detect HTML responses: a 200/206 with an HTML body means Reddit
   // returned a block/CAPTCHA/error page instead of RSS. Bail out gracefully.
   if (isHtmlResponse(xmlRaw)) {
     console.warn(
-      `[reddit] r/${sub} devolvió una página HTML (bloqueo/CAPTCHA); se omite.`,
+      `[reddit] El subreddit devolvió una página HTML (bloqueo/CAPTCHA) via ${viaProxy ? "ScraperAPI" : "directo"}; se omite.`,
     );
-    return [];
+    return { status: "fail", posts: [] };
   }
 
   // 3. Sanitize the XML before parsing: strip invalid XML control characters,
@@ -206,17 +274,24 @@ async function fetchSubredditFeed(sub: string, safeLimit: number): Promise<Reddi
   try {
     feed = await rssParser.parseString(cleanXml);
   } catch (error) {
-    console.error(`[reddit] No se pudo parsear el RSS de r/${sub}:`, error);
-    return [];
+    console.error(`[reddit] No se pudo parsear el RSS:`, error);
+    return { status: "fail", posts: [] };
   }
 
   // Guard against a parsed-but-empty feed (e.g. malformed RSS).
   if (!Array.isArray(feed.items) || feed.items.length === 0) {
-    console.warn(`[reddit] Feed sin items para r/${sub}.`);
-    return [];
+    console.warn(`[reddit] Feed sin items.`);
+    return { status: "fail", posts: [] };
   }
 
-  return mapRssItemsToPosts(feed.items, sub).slice(0, safeLimit);
+  const sub = extractSubFromUrl(targetUrl);
+  return { status: "ok", posts: mapRssItemsToPosts(feed.items, sub).slice(0, safeLimit) };
+}
+
+/** Pulls the subreddit name out of a `.../r/{sub}/new.rss` URL for logging. */
+function extractSubFromUrl(url: string): string {
+  const matches = /\/r\/([^/]+)\//.exec(url);
+  return matches?.[1] ?? "?";
 }
 
 /**
@@ -257,10 +332,17 @@ function sanitizeXml(xml: string): string {
 /**
  * Routes a target URL through ScraperAPI when `SCRAPER_API_KEY` is configured.
  *
- * Adds anti-block evasion flags so Reddit doesn't deliver an HTML block page:
- * `premium=true` uses residential/proxy pool and `render=true` forces a
- * browser-rendered response. The target URL is passed cleanly (single-encoded)
- * via `URLSearchParams`.
+ * Anti-block strategy so Reddit delivers the raw RSS XML instead of an HTML
+ * block/CAPTCHA page:
+ *   - `premium=true` routes through ScraperAPI's residentially-IP'd premium
+ *     pool, which sidesteps the datacenter-IP 429/403 blocks.
+ *   - `render` is intentionally NOT set: `render=true` forces a headless
+ *     browser to execute JS and returns the rendered HTML *site*, which would
+ *     turn an `.rss` response into an HTML page (why the fetcher kept seeing
+ *     "página HTML / bloqueo"). For a raw XML feed we want the un-rendered
+ *     body.
+ *
+ * The target URL is passed cleanly (single-encoded) via `URLSearchParams`.
  *
  * @param targetUrl The original URL to scrape (e.g. a Reddit RSS feed).
  * @returns         The ScraperAPI proxy URL, or the original URL unchanged when
@@ -273,23 +355,26 @@ function toScraperApiUrl(targetUrl: string): string {
   const params = new URLSearchParams({
     api_key: apiKey,
     url: targetUrl,
-    // Evade datacenter-IP blocking: premium residential pool + rendered page.
+    // Residential proxy pool to dodge datacenter-IP blocks. render left off:
+    // it would return the rendered HTML page instead of the raw RSS XML.
     premium: "true",
-    render: "true",
   });
   return `http://api.scraperapi.com?${params.toString()}`;
 }
 
 /**
- * Whether a URL points at ScraperAPI (as opposed to a direct Reddit feed).
+ * Result of a single networked attempt. A `Response` on HTTP completion
+ * (including non-2xx), or a thrown error (network failure/timeout). We surface
+ * timeouts explicitly so the caller can decide whether to retry.
  */
-function usesScraperApi(url: string): boolean {
-  return url.startsWith("http://api.scraperapi.com");
-}
+type FetchAttempt =
+  | { kind: "response"; response: Response }
+  | { kind: "error"; error: unknown; aborted: boolean };
 
 /**
  * Fetches a URL once, honoring the politeness throttle and per-attempt timeout.
- * Rate-limit/transient responses are handled by the outer retry loop.
+ * Timeouts abort via `AbortController`; the resulting abort is reported as an
+ * `aborted` error (instead of a synthetic 500) so the retry loop can retry it.
  *
  * @param timeoutMs Per-attempt timeout; ScraperAPI calls pass a larger value
  *                  (30s) than direct Reddit fetches to avoid premature aborts.
@@ -298,55 +383,86 @@ async function fetchWithTimeout(
   url: string,
   headers: Record<string, string>,
   timeoutMs: number = FETCH_TIMEOUT_MS,
-): Promise<Response> {
+): Promise<FetchAttempt> {
   await throttleNextRequest();
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, {
+    const response = await fetch(url, {
       signal: controller.signal,
       headers,
       // Default to fresh data; feeds are fetched per scan.
       cache: "no-store",
     });
+    return { kind: "response", response };
   } catch (error) {
-    console.error(`[reddit] Error de red en ${url}:`, error);
-    // Return a synthetic response so callers treat failures as non-OK instead
-    // of a thrown exception halting the pipeline.
-    return new Response(null, { status: 500 });
+    // Never log the full URL: ScraperAPI puts `api_key` on the query string and
+    // would leak the credential. `redactUrl` masks query values.
+    console.error(`[reddit] Error de red en ${redactUrl(url)}:`, error);
+    return {
+      kind: "error",
+      error,
+      // An aborted request is a timeout (the signal fires after timeoutMs).
+      // Network errors from undici surface as `AbortError` too.
+      aborted: isTimeoutError(error),
+    };
   } finally {
     clearTimeout(timeout);
   }
 }
 
 /**
- * Retries an HTTP fetch with exponential backoff when the response is
- * rate-limited (429/403/503), so transient blocks resolve before giving up.
+ * Retries a request with exponential backoff on transient/retryable failures:
+ * rate-limited responses (429/403/503) and timeouts/network aborts. Non-transient
+ * responses (e.g. 404, 500) and other network errors are returned/re-thrown so
+ * the caller can decide (or fall back to a direct fetch).
  *
- * @param request A thunk returning a `Response` (already handled by
- *                `fetchWithTimeout`), so each attempt re-throttles.
+ * @param request A thunk performing ONE attempt (e.g. `fetchWithTimeout`). Each
+ *                call re-throttles via `throttleNextRequest`.
  */
 async function fetchWithRetry(
-  request: () => Promise<Response>,
+  request: () => Promise<FetchAttempt>,
 ): Promise<Response> {
   let attempt = 0;
   while (true) {
-    const response = await request();
+    const outcome = await request();
 
-    if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_RETRIES) {
-      const backoff = BACKOFF_BASE_MS * Math.pow(2, attempt);
+    let retryable: boolean;
+    let status: number | null = null;
+    let timeout: boolean = false;
+
+    if (outcome.kind === "response") {
+      status = outcome.response.status;
+      retryable = RETRYABLE_STATUS.has(status);
+    } else {
+      timeout = outcome.aborted;
+      retryable = timeout;
+    }
+
+    if (retryable && attempt < MAX_RETRIES) {
+      // Timeouts need longer to back off than rate limits: premium ScraperAPI
+      // can take 10-20s+ to respond, so give it room before giving up.
+      const baseBackoff = timeout ? BACKOFF_BASE_MS * 3 : BACKOFF_BASE_MS;
+      const backoff = baseBackoff * Math.pow(2, attempt);
       // Jitter up to 500ms to avoid synchronized retry bursts across subreddits.
       const wait = backoff + randBetween(0, 500);
+      const reason = timeout ? "timeout/abort" : `status ${status}`;
       console.warn(
-        `[reddit] Status ${response.status}; reintentando en ${wait}ms (intento ${attempt + 1}/${MAX_RETRIES}).`,
+        `[reddit] ${reason}; reintentando en ${wait}ms (intento ${attempt + 1}/${MAX_RETRIES}).`,
       );
       await sleep(wait);
       attempt++;
       continue;
     }
 
-    return response;
+    // Give up: surface the timeout/network error so callers can run their
+    // fallback path (e.g. direct Reddit fetch) instead of silently returning
+    // a 500 that the pipeline would treat as a failed subreddit.
+    if (outcome.kind === "error") {
+      throw outcome.error;
+    }
+    return outcome.response;
   }
 }
 
@@ -436,6 +552,45 @@ function parseAuthor(value: unknown): string | null {
   return author.startsWith("u/") ? author.slice(2) : author;
 }
 
+/**
+ * Normalizes a subreddit reference into a bare, URL-safe name:
+ * trims whitespace, strips a leading `r/` and its trailing-space artifacts, and
+ * collapses any internal spaces. Returns `""` when the result is blank.
+ */
+function normalizeSubname(subreddit: string): string {
+  return subreddit
+    .trim()
+    .replace(/^r\/+/i, "")
+    .replace(/\s+/g, "")
+    .replace(/\/+$/g, "");
+}
+
+/**
+ * Whether an error is a timeout/abort (as opposed to, say, a DNS/TLS failure).
+ * Undici surfaces timed-out fetches as a `DOMException` named `AbortError`.
+ */
+function isTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" ||
+      (typeof (error as { cause?: unknown }).cause === "object" &&
+        ((error as { cause?: { name?: string } }).cause?.name ??
+          "") === "AbortError"))
+  );
+}
+
+/**
+ * Parses a numeric timeout from an environment value, falling back to
+ * `fallback` when unset/invalid. Dedicated helper so a misconfigured env value
+ * never yields `NaN`/`Infinity` that would break `setTimeout`.
+ */
+function parseTimeoutEnv(raw: string | undefined, fallback: number): number {
+  const value = raw?.trim();
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 /** Resolves after a randomized delay between `min` and `max` ms. */
 function randBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -443,6 +598,31 @@ function randBetween(min: number, max: number): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Redacts secrets from a URL for safe logging.
+ *
+ * ScraperAPI URLs carry the credential in the `api_key` query param, and any
+ * query string may hold opaque/per-site tokens, so replace query values with a
+ * placeholder while keeping it obvious which target was being requested.
+ */
+function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.searchParams.size > 0) {
+      for (const key of parsed.searchParams.keys()) {
+        parsed.searchParams.set(key, "<redacted>");
+      }
+    }
+    return parsed.toString();
+  } catch {
+    // Not a valid URL (rare) — return a truncated string rather than the raw
+    // text in case it carries sensitive data.
+    return url.length > 80
+      ? `${url.slice(0, 40)}…${url.slice(-32)}`
+      : url;
+  }
 }
 
 // ---------------------------------------------------------------------------
