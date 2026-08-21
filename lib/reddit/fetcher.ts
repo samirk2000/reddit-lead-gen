@@ -1,9 +1,13 @@
 /**
  * Reddit ingestion helpers.
  *
- * Fetches the newest posts from a subreddit via Reddit's public JSON API and
- * normalizes them into a typed shape that the lead pipeline can consume.
+ * Fetches posts from a subreddit via Reddit's public RSS feeds (`new.rss`)
+ * instead of the JSON API, which requires a registered bot in Reddit's
+ * Developer Portal, uses DOMParser-less native parsing via `rss-parser`, and
+ * normalizes items into the typed shape the lead pipeline (and Gemini) consume.
  */
+
+import Parser from "rss-parser";
 
 /** A normalized Reddit post used by the lead detection pipeline. */
 export type RedditPost = {
@@ -17,13 +21,13 @@ export type RedditPost = {
 
 /** Browser-like User-Agent to avoid Reddit's automated-traffic blocks. */
 const REDDIT_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-/** Full browser-style headers used for scraping requests. */
+/** Browser-style headers used when fetching Reddit's RSS feed. */
 const REDDIT_HEADERS: Record<string, string> = {
   "User-Agent": REDDIT_USER_AGENT,
   Accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.5",
 };
 
@@ -43,8 +47,19 @@ const BACKOFF_BASE_MS = 1000;
 const REQUEST_GAP_MIN_MS = 1500;
 const REQUEST_GAP_MAX_MS = 2000;
 
+/** Max RSS items to keep per subreddit feed. */
+const DEFAULT_FEED_LIMIT = 25;
+
+/** Re-usable RSS parser instance (stateless once configured). */
+const rssParser = new Parser<{ [key: string]: unknown }, RedditRssItem>({
+  // Expose the raw content string so we can strip Reddit's SC_ON/SC_OFF markers.
+  customFields: {
+    item: ["content:encoded"],
+  },
+});
+
 /**
- * Spaces the scraping requests out so we don't hammer Reddit/PullPush.
+ * Spaces the scraping requests out so we don't hammer Reddit.
  *
  * The previous completion time is awaited too, so concurrent callers are
  * serialized into a polite queue (each fires at least gap-ms after the last).
@@ -61,85 +76,52 @@ async function throttleNextRequest(): Promise<void> {
 }
 
 /**
- * Fetches posts for a subreddit, mirroring Reddit's JSON API.
+ * Fetches the newest posts of a subreddit using Reddit's public RSS feed.
  *
- * Attempts Reddit's native JSON first with full browser-like headers. When the
- * CDN blocks or rate-limits us (status 403/429), it falls back to the PullPush
- * (Pushshift mirror) API so scanning can continue without losing that
- * subreddit's leads. Requests are spaced 1.5-2s apart and rate-limited
+ * Uses `new.rss` (no Developer Portal registration required) with real
+ * browser-style headers. Requests are spaced 1.5-2s apart and rate-limited
  * responses are retried with exponential backoff.
  *
  * @param subreddit Subreddit name (e.g. `marketing`, `entrepreneur`).
- * @param limit     Number of posts to fetch (default 25, max 100).
- * @param keyword   Keyword phrase used only for the PullPush fallback query.
+ * @param limit     Max items to return (default 25).
+ * @param _keyword  Kept for signature compatibility with the pipeline.
  * @returns         Normalized array of the newest posts.
  */
 export async function fetchSubredditPosts(
   subreddit: string,
-  limit: number = 25,
-  keyword?: string,
+  limit: number = DEFAULT_FEED_LIMIT,
+  _keyword?: string,
 ): Promise<RedditPost[]> {
   const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
   const sub = subreddit.trim().replace(/^r\//, "") || "all";
   const url = `https://www.reddit.com/r/${encodeURIComponent(
     sub,
-  )}/new.json?limit=${safeLimit}`;
-
-  const response = await fetchWithRetry(() => fetchWithTimeout(url, REDDIT_HEADERS));
-
-  // Gracefully fall back to PullPush when Reddit's CDN blocks/rate-limits us.
-  if (!response.ok) {
-    if (response.status === 403 || response.status === 429) {
-      console.warn(
-        `[reddit] r/${sub} respondió ${response.status}; probando fallback PullPush.`,
-      );
-      return fetchPullPushPosts(sub, safeLimit, keyword);
-    }
-    throw new Error(`Reddit API returned ${response.status} for r/${sub}`);
-  }
-
-  const payload = (await response.json()) as RedditListingResponse;
-  return mapListingToPosts(payload, sub);
-}
-
-/**
- * Fetches posts via the PullPush (Pushshift mirror) API as a fallback when
- * Reddit's raw JSON endpoint blocks automated scraping.
- *
- * @param subreddit Subreddit to scope the keyword search to.
- * @param limit     Max results (default 25, capped at 100).
- * @param keyword   Keyword phrase to query against (required).
- * @returns         Normalized array of matching posts.
- */
-async function fetchPullPushPosts(
-  subreddit: string,
-  limit: number,
-  keyword?: string,
-): Promise<RedditPost[]> {
-  const q = keyword?.trim();
-  if (!q) {
-    console.warn("[reddit] Fallback PullPush requiere una keyword; se omite.");
-    return [];
-  }
-
-  const safeSize = Math.max(1, Math.min(100, Math.trunc(limit)));
-  const params = new URLSearchParams({
-    q,
-    subreddit,
-    size: String(safeSize),
-  });
-  const url = `https://api.pullpush.io/reddit/search/submission/?${params.toString()}`;
+  )}/new.rss`;
 
   const response = await fetchWithRetry(() =>
     fetchWithTimeout(url, REDDIT_HEADERS),
   );
   if (!response.ok) {
-    console.error(`[reddit] PullPush respondió ${response.status}; se omite.`);
+    // A blocked/rate-limited subreddit shouldn't abort the pipeline.
+    console.warn(`[reddit] r/${sub} respondió ${response.status}; se omite.`);
     return [];
   }
 
-  const payload = (await response.json()) as PullPushResponse;
-  return mapPullPushToPosts(payload, subreddit);
+  const xml = await response.text();
+  if (!xml.trim()) {
+    console.warn(`[reddit] Feed vacío para r/${sub}.`);
+    return [];
+  }
+
+  let feed: { items?: RedditRssItem[] };
+  try {
+    feed = await rssParser.parseString(xml);
+  } catch (error) {
+    console.error(`[reddit] No se pudo parsear el RSS de r/${sub}:`, error);
+    return [];
+  }
+
+  return mapRssItemsToPosts(feed.items ?? [], sub).slice(0, safeLimit);
 }
 
 /**
@@ -187,7 +169,7 @@ async function fetchWithRetry(
 
     if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_RETRIES) {
       const backoff = BACKOFF_BASE_MS * Math.pow(2, attempt);
-      // Jitter up to 500ms to avoid synchronized retry bursts across keyword.
+      // Jitter up to 500ms to avoid synchronized retry bursts across subreddits.
       const wait = backoff + randBetween(0, 500);
       console.warn(
         `[reddit] Status ${response.status}; reintentando en ${wait}ms (intento ${attempt + 1}/${MAX_RETRIES}).`,
@@ -201,6 +183,92 @@ async function fetchWithRetry(
   }
 }
 
+/**
+ * Maps RSS feed items into normalized `RedditPost`s.
+ *
+ * The Reddit post id is extracted from the item's `link`
+ * (`/r/{sub}/comments/{POST_ID}/{slug}/`) because RSS feeds do not carry the
+ * numeric id directly. Keeps only items with a resolvable id and title.
+ */
+function mapRssItemsToPosts(
+  items: RedditRssItem[],
+  subreddit: string,
+): RedditPost[] {
+  const posts: RedditPost[] = [];
+
+  for (const item of items) {
+    if (!item) continue;
+
+    const title = cleanText(item.title);
+    if (!title) continue;
+
+    const link = typeof item.link === "string" ? item.link.trim() : "";
+    if (!link) continue;
+
+    const redditPostId = extractPostId(link);
+    if (!redditPostId) continue;
+
+    const author = parseAuthor(item.creator ?? item.author);
+    const content = extractPostContent(item);
+
+    posts.push({
+      reddit_post_id: redditPostId,
+      title,
+      content,
+      author,
+      post_url: link.startsWith("http") ? link : `https://www.reddit.com${link}`,
+      subreddit,
+    });
+  }
+
+  return posts;
+}
+
+/**
+ * Extracts the post's base-36 id from a Reddit post URL, e.g.
+ * `https://www.reddit.com/r/marketing/comments/abc123/slug/` -> `abc123`.
+ */
+function extractPostId(link: string): string | null {
+  const matches = /\/comments\/([a-z0-9]+)\//i.exec(link);
+  return matches?.[1] ?? null;
+}
+
+/** Cleans, trims, and collapses whitespace in a title. */
+function cleanText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Resolves the content/selftext of an RSS item.
+ *
+ * Prefers the snippet (plain text) but falls back to the encoded content,
+ * stripping Reddit's `<!-- SC_OFF -->` / `<!-- SC_ON -->` markers.
+ */
+function extractPostContent(item: RedditRssItem): string | null {
+  const snippet = typeof item.contentSnippet === "string"
+    ? item.contentSnippet.trim()
+    : "";
+  if (snippet) return snippet;
+
+  const raw = item["content:encoded"];
+  const encoded = typeof raw === "string" && raw.length > 0 ? raw : "";
+  if (!encoded) return null;
+
+  return cleanText(
+    encoded
+      .replace(/<!--\s*SC_OFF\s*-->/gi, "")
+      .replace(/<!--\s*SC_ON\s*-->/gi, ""),
+  ) || null;
+}
+
+/** Normalizes the author (author may arrive as `u/name` or plain name). */
+function parseAuthor(value: unknown): string | null {
+  const author = typeof value === "string" ? value.trim() : "";
+  if (!author) return null;
+  return author.startsWith("u/") ? author.slice(2) : author;
+}
+
 /** Resolves after a randomized delay between `min` and `max` ms. */
 function randBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -210,149 +278,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Maps Reddit's listing JSON into normalized posts. Ignores non-post entries
- * (e.g. promoted/ads or comments) and safely handles missing fields.
- */
-function mapListingToPosts(
-  payload: RedditListingResponse,
-  subreddit: string,
-): RedditPost[] {
-  const children = payload?.data?.children;
-  if (!Array.isArray(children)) {
-    return [];
-  }
-
-  const posts: RedditPost[] = [];
-
-  for (const child of children) {
-    if (child?.kind !== "t3") {
-      continue; // skip comments, ads, and malformed entries
-    }
-
-    const post = child?.data;
-    if (!post) {
-      continue;
-    }
-
-    const title = typeof post.title === "string" ? post.title : "";
-    if (!title) {
-      continue;
-    }
-
-    const redditPostId = typeof post.id === "string" ? post.id : "";
-    if (!redditPostId) {
-      continue;
-    }
-
-    const permalink = typeof post.permalink === "string" ? post.permalink : "";
-    posts.push({
-      reddit_post_id: redditPostId,
-      title,
-      content:
-        typeof post.selftext === "string" && post.selftext
-          ? post.selftext
-          : null,
-      author: typeof post.author === "string" ? post.author : null,
-      post_url:
-        permalink.startsWith("http")
-          ? permalink
-          : `https://www.reddit.com${permalink}`,
-      subreddit:
-        typeof post.subreddit === "string" ? post.subreddit : subreddit,
-    });
-  }
-
-  return posts;
-}
-
-/**
- * Maps a PullPush submission response into normalized posts. Handles the
- * `data.data` array shape and safely skips entries missing required fields.
- */
-function mapPullPushToPosts(
-  payload: PullPushResponse,
-  subreddit: string,
-): RedditPost[] {
-  const items = payload?.data;
-  if (!Array.isArray(items)) {
-    return [];
-  }
-
-  const posts: RedditPost[] = [];
-
-  for (const item of items) {
-    const title = typeof item.title === "string" ? item.title : "";
-    if (!title) {
-      continue;
-    }
-
-    const redditPostId = typeof item.id === "string" ? item.id : "";
-    if (!redditPostId) {
-      continue;
-    }
-
-    const permalink =
-      typeof item.permalink === "string" ? item.permalink : "";
-
-    posts.push({
-      reddit_post_id: redditPostId,
-      title,
-      content:
-        typeof item.selftext === "string" && item.selftext
-          ? item.selftext
-          : null,
-      author: typeof item.author === "string" ? item.author : null,
-      post_url:
-        permalink.startsWith("http")
-          ? permalink
-          : `https://www.reddit.com${permalink}`,
-      subreddit:
-        typeof item.subreddit === "string" ? item.subreddit : subreddit,
-    });
-  }
-
-  return posts;
-}
-
 // ---------------------------------------------------------------------------
-// Minimal structural types for Reddit's listing JSON
+// RSS item structural types (mapped from Reddit's `new.rss` feed)
 // ---------------------------------------------------------------------------
 
-type RedditListingResponse = {
-  data?: {
-    children?: RedditChild[];
-  };
-};
-
-type RedditChild = {
-  kind?: string;
-  data?: RedditPostData;
-};
-
-type RedditPostData = {
-  id?: unknown;
-  title?: unknown;
-  selftext?: unknown;
-  author?: unknown;
-  permalink?: unknown;
-  subreddit?: unknown;
-};
-
-// ---------------------------------------------------------------------------
-// Minimal structural types for the PullPush (Pushshift mirror) API
-// ---------------------------------------------------------------------------
-
-type PullPushResponse = {
-  data?: PullPushSubmission[];
-};
-
-type PullPushSubmission = {
-  id?: unknown;
-  title?: unknown;
-  selftext?: unknown;
-  author?: unknown;
-  permalink?: unknown;
-  subreddit?: unknown;
-  created_utc?: unknown;
+type RedditRssItem = {
+  title?: string;
+  link?: string;
+  author?: string;
+  creator?: string;
+  pubDate?: string;
+  guid?: string;
+  content?: string;
+  contentSnippet?: string;
+  "content:encoded"?: unknown;
 };
