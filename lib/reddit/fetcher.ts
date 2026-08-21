@@ -19,7 +19,7 @@ export type RedditPost = {
 const REDDIT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
-/** Full browser-style headers used for the primary Reddit JSON request. */
+/** Full browser-style headers used for scraping requests. */
 const REDDIT_HEADERS: Record<string, string> = {
   "User-Agent": REDDIT_USER_AGENT,
   Accept:
@@ -27,8 +27,38 @@ const REDDIT_HEADERS: Record<string, string> = {
   "Accept-Language": "en-US,en;q=0.5",
 };
 
-/** Max time to wait for a Reddit response before aborting the request. */
+/** Per-attempt max wait before aborting a single HTTP request. */
 const FETCH_TIMEOUT_MS = 5000;
+
+/** Rate-limit statuses we treat as retryable via exponential backoff. */
+const RETRYABLE_STATUS = new Set([429, 403, 503]);
+
+/** Max retries for rate-limited/transient requests (besides the first call). */
+const MAX_RETRIES = 3;
+
+/** Base backoff (ms) doubled on each retry: 1000, 2000, 4000. */
+const BACKOFF_BASE_MS = 1000;
+
+/** Randomized politeness delay range (ms) between sequential scrapes. */
+const REQUEST_GAP_MIN_MS = 1500;
+const REQUEST_GAP_MAX_MS = 2000;
+
+/**
+ * Spaces the scraping requests out so we don't hammer Reddit/PullPush.
+ *
+ * The previous completion time is awaited too, so concurrent callers are
+ * serialized into a polite queue (each fires at least gap-ms after the last).
+ */
+let lastRequestAt = 0;
+
+async function throttleNextRequest(): Promise<void> {
+  const gap = randBetween(REQUEST_GAP_MIN_MS, REQUEST_GAP_MAX_MS);
+  const elapsed = Date.now() - lastRequestAt;
+  if (elapsed < gap) {
+    await sleep(gap - elapsed);
+  }
+  lastRequestAt = Date.now();
+}
 
 /**
  * Fetches posts for a subreddit, mirroring Reddit's JSON API.
@@ -36,7 +66,8 @@ const FETCH_TIMEOUT_MS = 5000;
  * Attempts Reddit's native JSON first with full browser-like headers. When the
  * CDN blocks or rate-limits us (status 403/429), it falls back to the PullPush
  * (Pushshift mirror) API so scanning can continue without losing that
- * subreddit's leads.
+ * subreddit's leads. Requests are spaced 1.5-2s apart and rate-limited
+ * responses are retried with exponential backoff.
  *
  * @param subreddit Subreddit name (e.g. `marketing`, `entrepreneur`).
  * @param limit     Number of posts to fetch (default 25, max 100).
@@ -54,7 +85,7 @@ export async function fetchSubredditPosts(
     sub,
   )}/new.json?limit=${safeLimit}`;
 
-  const response = await fetchWithTimeout(url, REDDIT_HEADERS);
+  const response = await fetchWithRetry(() => fetchWithTimeout(url, REDDIT_HEADERS));
 
   // Gracefully fall back to PullPush when Reddit's CDN blocks/rate-limits us.
   if (!response.ok) {
@@ -99,7 +130,9 @@ async function fetchPullPushPosts(
   });
   const url = `https://api.pullpush.io/reddit/search/submission/?${params.toString()}`;
 
-  const response = await fetchWithTimeout(url, REDDIT_HEADERS);
+  const response = await fetchWithRetry(() =>
+    fetchWithTimeout(url, REDDIT_HEADERS),
+  );
   if (!response.ok) {
     console.error(`[reddit] PullPush respondió ${response.status}; se omite.`);
     return [];
@@ -110,14 +143,15 @@ async function fetchPullPushPosts(
 }
 
 /**
- * Fetches a URL with an abort timeout, normalizing network/transport errors
- * (including timeouts) into a synthetic 500 response so callers can treat
- * failures via the non-OK path instead of a thrown exception.
+ * Fetches a URL once, honoring the politeness throttle and per-attempt timeout.
+ * Rate-limit/transient responses are handled by the outer retry loop.
  */
 async function fetchWithTimeout(
   url: string,
   headers: Record<string, string>,
 ): Promise<Response> {
+  await throttleNextRequest();
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -129,12 +163,51 @@ async function fetchWithTimeout(
     });
   } catch (error) {
     console.error(`[reddit] Error de red en ${url}:`, error);
-    // Return a synthetic 500 response so callers treat it as non-OK instead of
-    // a thrown exception halting the pipeline.
+    // Return a synthetic response so callers treat failures as non-OK instead
+    // of a thrown exception halting the pipeline.
     return new Response(null, { status: 500 });
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Retries an HTTP fetch with exponential backoff when the response is
+ * rate-limited (429/403/503), so transient blocks resolve before giving up.
+ *
+ * @param request A thunk returning a `Response` (already handled by
+ *                `fetchWithTimeout`), so each attempt re-throttles.
+ */
+async function fetchWithRetry(
+  request: () => Promise<Response>,
+): Promise<Response> {
+  let attempt = 0;
+  while (true) {
+    const response = await request();
+
+    if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_RETRIES) {
+      const backoff = BACKOFF_BASE_MS * Math.pow(2, attempt);
+      // Jitter up to 500ms to avoid synchronized retry bursts across keyword.
+      const wait = backoff + randBetween(0, 500);
+      console.warn(
+        `[reddit] Status ${response.status}; reintentando en ${wait}ms (intento ${attempt + 1}/${MAX_RETRIES}).`,
+      );
+      await sleep(wait);
+      attempt++;
+      continue;
+    }
+
+    return response;
+  }
+}
+
+/** Resolves after a randomized delay between `min` and `max` ms. */
+function randBetween(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

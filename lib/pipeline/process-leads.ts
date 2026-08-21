@@ -86,8 +86,9 @@ export async function runLeadGenerationPipelineForUser(
   return summary;
 }
 
-/** Max N subreddit scans running at the same time. */
-const MAX_CONCURRENT_KEYWORDS = 4;
+/** Max N subreddit scans running at the same time. Kept low (2-3) to avoid
+ * triggering Reddit/PullPush rate limits with parallel scrape bursts. */
+const MAX_CONCURRENT_KEYWORDS = 2;
 
 /**
  * Maps an array through an async worker with a bounded concurrency limit.

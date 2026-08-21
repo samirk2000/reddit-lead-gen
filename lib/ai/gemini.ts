@@ -50,7 +50,7 @@ export const REDDIT_ANALYSIS_SCHEMA: Schema = {
 };
 
 /** Gemini model used for structured post analysis. */
-export const GEMINI_MODEL = "gemini-2.5-flash";
+export const GEMINI_MODEL = "gemini-1.5-flash";
 
 /**
  * Analyzes a Reddit post against a target keyword using `gemini-2.5-flash`.
