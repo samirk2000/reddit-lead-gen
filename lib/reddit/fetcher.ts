@@ -19,6 +19,9 @@ export type RedditPost = {
 const REDDIT_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) RedditLeadGenBot/1.0";
 
+/** Max time to wait for a Reddit response before aborting the request. */
+const FETCH_TIMEOUT_MS = 5000;
+
 /**
  * Fetches the latest posts from a subreddit's `new` feed.
  *
@@ -36,14 +39,32 @@ export async function fetchSubredditPosts(
     sub,
   )}/new.json?limit=${safeLimit}`;
 
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": REDDIT_USER_AGENT,
-      Accept: "application/json",
-    },
-    // Default to fresh data; the feed is fetched per scan.
-    cache: "no-store",
-  });
+  // Abort slow Reddit requests so a hanging feed fails fast instead of
+  // blocking the Server Action / pipeline.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": REDDIT_USER_AGENT,
+        Accept: "application/json",
+      },
+      // Default to fresh data; the feed is fetched per scan.
+      cache: "no-store",
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `Reddit API timeout (> ${FETCH_TIMEOUT_MS}ms) para r/${sub}`,
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     // Reddit often rate-limits anonymous JSON requests; surface the status.

@@ -55,27 +55,75 @@ export async function runLeadGenerationPipelineForUser(
     skippedFilter: 0,
   };
 
-  // Iterate keyword combinations; catch per-keyword errors so one failure
-  // doesn't abort the whole run.
-  for (const keyword of keywords) {
-    try {
-      await processKeyword(
+  // Process all keyword/subreddit scans concurrently with a bounded concurrency
+  // so a single slow or failing subreddit doesn't block the rest, while still
+  // capping simultaneous Reddit/Gemini calls to avoid hammering external APIs.
+  const results = await mapWithConcurrency(
+    keywords,
+    (keyword) =>
+      processKeyword(
         supabase,
         userId,
         keyword,
         settings,
         existingPostIds,
         summary,
-      );
-    } catch (error) {
+      ),
+    MAX_CONCURRENT_KEYWORDS,
+  );
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result && result.status === "rejected") {
+      const keyword = keywords[i];
       console.error(
-        `[pipeline] Error procesando keyword "${keyword.phrase}" de r/${keyword.subreddit} para ${userId}:`,
-        error,
+        `[pipeline] Error procesando keyword "${keyword?.phrase ?? "?"}" de r/${keyword?.subreddit ?? "?"} para ${userId}:`,
+        result.reason,
       );
     }
   }
 
   return summary;
+}
+
+/** Max N subreddit scans running at the same time. */
+const MAX_CONCURRENT_KEYWORDS = 4;
+
+/**
+ * Maps an array through an async worker with a bounded concurrency limit.
+ *
+ * Returns the outcome of every task (fulfilled or rejected) in input order, so
+ * callers can handle each failure independently without aborting the batch.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  worker: (item: T) => Promise<R>,
+  concurrency: number,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker(): Promise<void> {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      const item = items[index];
+      try {
+        // index is guaranteed in-bounds by the guard above.
+        const value = await worker(item as T);
+        results[index] = { status: "fulfilled", value };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => runWorker(),
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 /** Loads the user's settings, or an empty-ish fallback when absent. */
