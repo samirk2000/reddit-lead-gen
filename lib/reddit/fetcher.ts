@@ -134,15 +134,34 @@ export async function fetchSubredditPosts(
     return [];
   }
 
+  // Reddit/ScraperAPI sometimes emits raw `&` or invalid entities in the XML
+  // (e.g. unescaped ampersands inside content), which makes the parser throw
+  // "Invalid character in entity name". Sanitize before parsing.
+  const sanitizedXml = sanitizeXml(xml);
+
   let feed: { items?: RedditRssItem[] };
   try {
-    feed = await rssParser.parseString(xml);
+    feed = await rssParser.parseString(sanitizedXml);
   } catch (error) {
     console.error(`[reddit] No se pudo parsear el RSS de r/${sub}:`, error);
     return [];
   }
 
   return mapRssItemsToPosts(feed.items ?? [], sub).slice(0, safeLimit);
+}
+
+/**
+ * Escapes ampersands that are not part of a known XML/HTML entity, preventing
+ * "Invalid character in entity name" parse errors on malformed RSS feeds.
+ *
+ * Keeps named entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`) and
+ * numeric entities (`&#123;`, `&#x1F;`) intact; bare `&` become `&amp;`.
+ */
+function sanitizeXml(xml: string): string {
+  return xml.replace(
+    /&(?!(?:(?:amp|lt|gt|quot|apos|nbsp);)|#\d+;|#x[0-9a-fA-F]+;)/g,
+    "&amp;",
+  );
 }
 
 /**
