@@ -38,8 +38,14 @@ const SCRAPER_API_HEADERS: Record<string, string> = {
   Accept: "application/xml, text/xml, */*;q=0.8",
 };
 
-/** Per-attempt max wait before aborting a single HTTP request. */
+/** Per-attempt max wait (ms) for direct Reddit requests. */
 const FETCH_TIMEOUT_MS = 5000;
+
+/**
+ * Per-attempt max wait (ms) when routing through ScraperAPI, which needs time
+ * to rotate IPs and warm up before responding (30s to avoid premature aborts).
+ */
+const FETCH_TIMEOUT_MS_SCRAPER_API = 30000;
 
 /** Rate-limit statuses we treat as retryable via exponential backoff. */
 const RETRYABLE_STATUS = new Set([429, 403, 503]);
@@ -85,9 +91,10 @@ async function throttleNextRequest(): Promise<void> {
 /**
  * Fetches the newest posts of a subreddit using Reddit's public RSS feed.
  *
- * Uses `new.rss` (no Developer Portal registration required) with real
- * browser-style headers. Requests are spaced 1.5-2s apart and rate-limited
- * responses are retried with exponential backoff.
+ * Uses `old.reddit.com/r/{sub}/new.rss` (no Developer Portal registration
+ * required) with real browser-style headers. Requests are spaced 1.5-2s apart,
+ * rate-limited responses are retried with exponential backoff, and requests
+ * route through ScraperAPI (with a 30s timeout) when a key is configured.
  *
  * @param subreddit Subreddit name (e.g. `marketing`, `entrepreneur`).
  * @param limit     Max items to return (default 25).
@@ -101,19 +108,19 @@ export async function fetchSubredditPosts(
 ): Promise<RedditPost[]> {
   const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
   const sub = subreddit.trim().replace(/^r\//, "") || "all";
-  const rssUrl = `https://www.reddit.com/r/${encodeURIComponent(
+  const rssUrl = `https://old.reddit.com/r/${encodeURIComponent(
     sub,
   )}/new.rss`;
 
   // Route through ScraperAPI when a key is configured to avoid Reddit's
   // IP-level 429/403 blocks; otherwise fetch the RSS directly.
   const fetchUrl = toScraperApiUrl(rssUrl);
-  const headers = usesScraperApi(fetchUrl)
-    ? SCRAPER_API_HEADERS
-    : REDDIT_HEADERS;
+  const viaProxy = usesScraperApi(fetchUrl);
+  const headers = viaProxy ? SCRAPER_API_HEADERS : REDDIT_HEADERS;
+  const timeoutMs = viaProxy ? FETCH_TIMEOUT_MS_SCRAPER_API : FETCH_TIMEOUT_MS;
 
   const response = await fetchWithRetry(() =>
-    fetchWithTimeout(fetchUrl, headers),
+    fetchWithTimeout(fetchUrl, headers, timeoutMs),
   );
   if (!response.ok) {
     // A blocked/rate-limited subreddit shouldn't abort the pipeline.
@@ -166,15 +173,19 @@ function usesScraperApi(url: string): boolean {
 /**
  * Fetches a URL once, honoring the politeness throttle and per-attempt timeout.
  * Rate-limit/transient responses are handled by the outer retry loop.
+ *
+ * @param timeoutMs Per-attempt timeout; ScraperAPI calls pass a larger value
+ *                  (30s) than direct Reddit fetches to avoid premature aborts.
  */
 async function fetchWithTimeout(
   url: string,
   headers: Record<string, string>,
+  timeoutMs: number = FETCH_TIMEOUT_MS,
 ): Promise<Response> {
   await throttleNextRequest();
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
       signal: controller.signal,
