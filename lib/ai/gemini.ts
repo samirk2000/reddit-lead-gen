@@ -146,17 +146,30 @@ function buildAnalysisPrompt(
   keyword: string,
 ): string {
   return [
-    "Actúa como un estratega experto en social listening y crecimiento " +
-      "B2B/B2C. Analiza el siguiente post de Reddit frente a la keyword " +
-      "objetivo del usuario.",
+    "Actúa como un experto en generación de leads para servicios de IPTV " +
+      "(streaming de TV en vivo) y social listening en Reddit. Analiza el " +
+      "siguiente post frente a la keyword objetivo del usuario.",
     "",
-    "Evalúa si el autor está buscando activamente una solución, expresa " +
-      "frustración con una herramienta existente, o pide recomendaciones.",
-    "Asigna un intent_score de 1 a 10 según la alineación del dolor del " +
-      "autor con la keyword.",
-    "Redacta un suggested_reply persuasivo, natural y sin tono de venta: " +
-      "responde como un par que aporta valor, sin sonar a bot ni a spam " +
-      "promocional.",
+    "INTENCIÓN ALTA (intent_score 8-10):",
+    "- El autor busca activamente recomendaciones de IPTV, proveedores " +
+      "alternativos, listas M3U, códigos Xtream, o soluciones de streaming " +
+      "para FireStick.",
+    "- Expresa frustración con su proveedor actual o pide explícitamente a " +
+      "dónde cambiarse.",
+    "",
+    "INTENCIÓN BAJA (intent_score menor a 6):",
+    "- Discusiones, noticias, o consultas de soporte técnico sobre setups " +
+      "existentes sin intención de cambiar o comprar.",
+    "- Marca estos casos con un score bajo para que el pipeline los ignore.",
+    "",
+    "ESTRATEGIA DE RESPUESTA (suggested_reply):",
+    "- Redacta una respuesta útil, natural y NO spam.",
+    "- NO incluyas enlaces en la respuesta.",
+    "- El objetivo es invitar de forma natural al autor a enviarte un " +
+      "mensaje directo (DM) para una prueba gratis / línea de demo.",
+    "- Mantenlo corto, profesional y amigable. P.ej.: 'Sent you a DM with " +
+      "details' o 'If you're still looking, I can share a free trial code " +
+      "via DM to test buffer-free streams'.",
     "",
     `KEYWORD OBJETIVO: ${keyword}`,
     "",
