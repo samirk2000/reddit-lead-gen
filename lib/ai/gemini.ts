@@ -49,15 +49,24 @@ export const REDDIT_ANALYSIS_SCHEMA: Schema = {
   required: ["intent_score", "analysis_reasoning", "suggested_reply"],
 };
 
-/** Gemini model used for structured post analysis. */
-export const GEMINI_MODEL = "gemini-2.5-flash";
+/**
+ * Gemini model used for structured post analysis.
+ *
+ * `gemini-2.5-flash` returned a 404 (model not available on the active account/
+ * plan), so we use the newest flash model present in the installed `@google/genai`
+ * SDK typings (`gemini-3.6-flash`). Verify against your Billing/quota if it 404s.
+ */
+export const GEMINI_MODEL = "gemini-3.6-flash";
 
 /**
- * Analyzes a Reddit post against a target keyword using `gemini-2.5-flash`.
+ * Analyzes a Reddit post against a target keyword using `GEMINI_MODEL`.
  *
  * API key resolution order:
  *   1. `userApiKey` (per-user key stored in `user_settings.gemini_api_key`)
  *   2. `process.env.GEMINI_API_KEY` (shared/server key)
+ *
+ * Failures are logged clearly to the console, then re-thrown so the pipeline
+ * caller can decide whether a single post error should abort the subreddit.
  *
  * @param postTitle    Reddit post title.
  * @param postContent  Reddit post body (may be empty).
@@ -65,8 +74,8 @@ export const GEMINI_MODEL = "gemini-2.5-flash";
  * @param userApiKey   Optional per-user API key override.
  * @returns            Parsed structured analysis.
  * @throws             When no API key is configured, when the model is
- *                     rate-limited after retries, or when the response cannot
- *                     be parsed.
+ *                     rate-limited after retries, when the response cannot be
+ *                     parsed, or when Gemini itself errors (e.g. model 404).
  */
 export async function analyzeRedditPost(
   postTitle: string,
@@ -115,7 +124,14 @@ export async function analyzeRedditPost(
           continue; // retry, the loop sleeps before the next attempt
         }
       }
-      throw wrapError(error, { postTitle, keyword });
+      // Log clearly before throwing so the failure is visible even if the
+      // pipeline later swallows it (per-post). Include model + keyword/title
+      // for fast diagnosis without dumping the whole stack.
+      const wrapped = wrapError(error, { postTitle, keyword });
+      console.error(
+        `[gemini] Error al analizar post con "${keyword}": ${wrapped.message}`,
+      );
+      throw wrapped;
     }
   }
 

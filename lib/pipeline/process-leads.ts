@@ -7,7 +7,10 @@ import type {
 } from "@/lib/supabase/types";
 import { fetchSubredditPosts, type RedditPost } from "@/lib/reddit/fetcher";
 import { sendTelegramLeadNotification } from "@/lib/telegram/bot";
-import { analyzeRedditPost } from "@/lib/ai/gemini";
+import {
+  analyzeRedditPost,
+  type RedditPostAnalysis,
+} from "@/lib/ai/gemini";
 
 /** Threshold above which a lead is worth alerting the user about. */
 const ALERT_INTENT_SCORE = 7;
@@ -266,12 +269,23 @@ async function processSubreddit(
       // handled inside analyzeRedditPost.
       const apiKey = settings.gemini_api_key ?? undefined;
 
-      const analysis = await analyzeRedditPost(
-        post.title,
-        post.content ?? "",
-        keyword.phrase,
-        apiKey,
-      );
+      // A Gemini error on one post must NOT abort the whole subreddit scan.
+      // Log it clearly and skip just this post, keeping the rest flowing.
+      let analysis: RedditPostAnalysis;
+      try {
+        analysis = await analyzeRedditPost(
+          post.title,
+          post.content ?? "",
+          keyword.phrase,
+          apiKey,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(
+          `[pipeline] Omitiendo post "${truncate(post.title)}" (r/${post.subreddit}) por fallo de Gemini: ${message}`,
+        );
+        continue;
+      }
 
       // Surface matches + AI score in the console so a manual scan is easy to
       // eyeball: which post matched which keyword and how Gemini scored intent.
