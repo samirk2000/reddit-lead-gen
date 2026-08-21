@@ -122,45 +122,85 @@ export async function fetchSubredditPosts(
   const response = await fetchWithRetry(() =>
     fetchWithTimeout(fetchUrl, headers, timeoutMs),
   );
+
+  // 1. Validate HTTP status: treat any non-OK response (404, 403, 429, 5xx…)
+  // as a per-subreddit failure — log it and skip without aborting the pipeline.
   if (!response.ok) {
-    // A blocked/rate-limited subreddit shouldn't abort the pipeline.
-    console.warn(`[reddit] r/${sub} respondió ${response.status}; se omite.`);
+    console.warn(
+      `[reddit] r/${sub} respondió ${response.status}; se omite el subreddit.`,
+    );
     return [];
   }
 
-  const xml = await response.text();
-  if (!xml.trim()) {
+  const xmlRaw = await response.text();
+  if (!xmlRaw.trim()) {
     console.warn(`[reddit] Feed vacío para r/${sub}.`);
     return [];
   }
 
-  // Reddit/ScraperAPI sometimes emits raw `&` or invalid entities in the XML
-  // (e.g. unescaped ampersands inside content), which makes the parser throw
-  // "Invalid character in entity name". Sanitize before parsing.
-  const sanitizedXml = sanitizeXml(xml);
+  // 2. Detect HTML responses: a 200/206 with an HTML body means Reddit
+  // returned a block/CAPTCHA/error page instead of RSS. Bail out gracefully.
+  if (isHtmlResponse(xmlRaw)) {
+    console.warn(
+      `[reddit] r/${sub} devolvió una página HTML (bloqueo/CAPTCHA); se omite.`,
+    );
+    return [];
+  }
+
+  // 3. Sanitize the XML before parsing: strip invalid XML control characters,
+  // escape loose ampersands, and drop corrupt tags to avoid "Invalid character
+  // in tag name" / "Invalid character in entity name" errors.
+  const cleanXml = sanitizeXml(xmlRaw);
 
   let feed: { items?: RedditRssItem[] };
   try {
-    feed = await rssParser.parseString(sanitizedXml);
+    feed = await rssParser.parseString(cleanXml);
   } catch (error) {
     console.error(`[reddit] No se pudo parsear el RSS de r/${sub}:`, error);
     return [];
   }
 
-  return mapRssItemsToPosts(feed.items ?? [], sub).slice(0, safeLimit);
+  // Guard against a parsed-but-empty feed (e.g. malformed RSS).
+  if (!Array.isArray(feed.items) || feed.items.length === 0) {
+    console.warn(`[reddit] Feed sin items para r/${sub}.`);
+    return [];
+  }
+
+  return mapRssItemsToPosts(feed.items, sub).slice(0, safeLimit);
 }
 
 /**
- * Escapes ampersands that are not part of a known XML/HTML entity, preventing
- * "Invalid character in entity name" parse errors on malformed RSS feeds.
+ * Heuristically detects whether a fetched body is an HTML error/block page
+ * rather than an RSS/Atom feed. An HTML block indicates Reddit responded with
+ * a CAPTCHA or rate-limit page instead of the feed.
+ */
+function isHtmlResponse(body: string): boolean {
+  const head = body.slice(0, 1000).toLowerCase();
+  return head.includes("<!doctype html") || /<html[\s>]/.test(head);
+}
+
+/**
+ * Makes a malformed feed safe to parse. With Reddit's RSS (possibly proxied by
+ * ScraperAPI) we often see:
+ *   - Invalid XML control characters (breaks tag names).
+ *   - Loose/bare `&` where an entity was expected ("Invalid character in
+ *     entity name").
  *
- * Keeps named entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`) and
- * numeric entities (`&#123;`, `&#x1F;`) intact; bare `&` become `&amp;`.
+ * @returns A cleaned string ready for `rssParser.parseString`.
  */
 function sanitizeXml(xml: string): string {
-  return xml.replace(
-    /&(?!(?:(?:amp|lt|gt|quot|apos|nbsp);)|#\d+;|#x[0-9a-fA-F]+;)/g,
-    "&amp;",
+  return (
+    xml
+      // Remove XML-invalid control characters (keeps \t, \n, \r).
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+      // Escape bare ampersands that aren't a valid named/numeric entity,
+      // and keep known entities intact.
+      .replace(
+        /&(?!(?:(?:amp|lt|gt|quot|apos|nbsp);)|#\d+;|#x[0-9a-fA-F]+;)/g,
+        "&amp;",
+      )
+      // Newline/whitespace-only "tags" that aren't real elements.
+      .replace(/<\s+>/g, " ")
   );
 }
 
