@@ -76,22 +76,27 @@ export function SettingsForm({ settings }: SettingsFormProps) {
         </p>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border border-border p-4">
-        <div>
-          <Label>Escaneo automático</Label>
-          <p className="text-sm text-muted-foreground">
-            Debe estar ON para que el cron automático te escanee. OFF = solo
-            scans manuales con &quot;Run Scan Now&quot;.
-          </p>
-        </div>
-        <label className="relative inline-flex cursor-pointer items-center">
+      <div className="rounded-lg border border-border bg-muted/30 p-4">
+        <label
+          htmlFor="is_active"
+          className="flex cursor-pointer items-start gap-3"
+        >
           <input
+            id="is_active"
             name="is_active"
             type="checkbox"
             defaultChecked={settings?.is_active ?? false}
-            className="peer sr-only"
+            className="mt-1 size-5 shrink-0 rounded border-border text-primary accent-orange-500 focus:ring-2 focus:ring-primary"
           />
-          <div className="h-6 w-11 rounded-full bg-muted after:absolute after:start-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-border after:bg-background after:transition-all peer-checked:bg-primary peer-checked:after:translate-x-full" />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-foreground">
+              Escaneo automático (cron)
+            </span>
+            <span className="mt-1 block text-sm text-muted-foreground">
+              Marcá esta casilla y guardá para que Vercel te escanee solo (1
+              vez al día). Sin marcar = solo &quot;Run Scan Now&quot; manual.
+            </span>
+          </span>
         </label>
       </div>
 
