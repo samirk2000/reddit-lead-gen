@@ -15,23 +15,55 @@ const MAX_PHRASE_LENGTH = 200;
 const MAX_SUBREDDIT_LENGTH = 100;
 
 /**
- * Broad, common keywords used to quickly bootstrap a test account so a manual
- * scan matches something. Generic enough to exercise the match + AI-scoring
- * path, but "app" is deliberately replaced with higher-intent compound phrases
- * to avoid noisy low-signal matches.
+ * High-intent sales phrases for the IPTV / Fire Stick / player niche.
+ * Prefer compound phrases so word-boundary matching stays precise and Gemini
+ * only sees posts with real buying/setup pain.
+ *
+ * Seeded against `all`, which the pipeline expands to `DEFAULT_SUBREDDITS`.
  */
-const TEST_KEYWORDS = [
-  "remote",
-  "setup",
-  "recommend",
-  "best",
-  "iptv app",
-  "player app",
-  "tv app",
-  "best app",
-];
+const SALES_KEYWORDS = [
+  "looking for iptv",
+  "need iptv",
+  "best iptv",
+  "iptv recommendation",
+  "recommend iptv",
+  "iptv provider",
+  "iptv service",
+  "fire stick setup",
+  "firestick setup",
+  "setup help",
+  "best player",
+  "tivimate setup",
+  "smarters setup",
+  "not working",
+  "alternative to",
+  "cord cutting",
+  "looking for provider",
+  "free trial",
+  "which iptv",
+  "any recommendations",
+] as const;
 
-const TEST_SUBREDDIT = "all";
+/**
+ * Legacy noisy phrases from early pipeline tests. Pausing these cuts false
+ * positives (e.g. bare "best", "setup", "remote") without deleting history.
+ */
+const NOISY_TEST_KEYWORDS = new Set(
+  [
+    "remote",
+    "setup",
+    "recommend",
+    "best",
+    "app",
+    "player",
+    "iptv app",
+    "player app",
+    "tv app",
+    "best app",
+  ].map((p) => p.toLowerCase()),
+);
+
+const SALES_SUBREDDIT = "all";
 
 /**
  * Adds a new keyword for the current user.
@@ -129,52 +161,117 @@ export async function toggleKeyword(
 }
 
 /**
- * Seeds broad test keywords for the current user, skipping any phrase/subreddit
- * combination they already have. Useful to bootstrap a test account for a
- * manual scan without typing each keyword by hand.
+ * Seeds high-intent sales keywords for the current user, skipping any
+ * phrase/subreddit combination they already have. Prefer this over the old
+ * broad test seed when hunting real buyers.
  */
-export async function seedTestKeywords(): Promise<KeywordActionResult> {
+export async function seedSalesKeywords(): Promise<KeywordActionResult> {
   const userId = await requireUserId();
   const supabase = await createClient(cookies());
 
-  // Load existing phrases (all subreddits) so we don't create duplicates.
   const { data: existing, error: loadError } = await supabase
     .from("keywords")
     .select("phrase, subreddit")
     .eq("user_id", userId);
 
   if (loadError) {
-    console.error("[keywords] seedTestKeywords: no se pudo leer keywords:", loadError);
+    console.error(
+      "[keywords] seedSalesKeywords: no se pudo leer keywords:",
+      loadError,
+    );
     return { ok: false, message: "No se pudieron leer las keywords existentes." };
   }
 
   const have = new Set(
-    (existing ?? []).map((k) => `${k.phrase.toLowerCase()}|${k.subreddit.toLowerCase()}`),
+    (existing ?? []).map(
+      (k) => `${k.phrase.toLowerCase()}|${k.subreddit.toLowerCase()}`,
+    ),
   );
 
-  const rows = TEST_KEYWORDS.filter(
-    (phrase) => !have.has(`${phrase.toLowerCase()}|${TEST_SUBREDDIT}`),
+  const rows = SALES_KEYWORDS.filter(
+    (phrase) =>
+      !have.has(`${phrase.toLowerCase()}|${SALES_SUBREDDIT}`),
   ).map((phrase) => ({
     user_id: userId,
     phrase,
-    subreddit: TEST_SUBREDDIT,
+    subreddit: SALES_SUBREDDIT,
     is_active: true,
   }));
 
   if (rows.length === 0) {
-    return { ok: true, message: "Ya tenías todas las keywords de prueba." };
+    return { ok: true, message: "Ya tenías todas las keywords de venta." };
   }
 
   const { error } = await supabase.from("keywords").insert(rows);
 
   if (error) {
-    console.error("[keywords] seedTestKeywords falló:", error);
-    return { ok: false, message: "No se pudo sembrar las keywords de prueba." };
+    console.error("[keywords] seedSalesKeywords falló:", error);
+    return { ok: false, message: "No se pudo sembrar las keywords de venta." };
   }
 
   revalidatePath("/dashboard/keywords");
   revalidatePath("/dashboard");
-  return { ok: true, message: `${rows.length} keywords de prueba agregadas.` };
+  return { ok: true, message: `${rows.length} keywords de venta agregadas.` };
+}
+
+/**
+ * Pauses legacy noisy test keywords (remote, setup, best, …) so they stop
+ * generating false positives. Does not delete rows.
+ */
+export async function pauseNoisyTestKeywords(): Promise<KeywordActionResult> {
+  const userId = await requireUserId();
+  const supabase = await createClient(cookies());
+
+  const { data: existing, error: loadError } = await supabase
+    .from("keywords")
+    .select("id, phrase, is_active")
+    .eq("user_id", userId)
+    .eq("is_active", true);
+
+  if (loadError) {
+    console.error(
+      "[keywords] pauseNoisyTestKeywords: no se pudo leer keywords:",
+      loadError,
+    );
+    return { ok: false, message: "No se pudieron leer las keywords existentes." };
+  }
+
+  const toPause = (existing ?? []).filter((k) =>
+    NOISY_TEST_KEYWORDS.has(k.phrase.trim().toLowerCase()),
+  );
+
+  if (toPause.length === 0) {
+    return { ok: true, message: "No había keywords ruidosas activas." };
+  }
+
+  const { error } = await supabase
+    .from("keywords")
+    .update({ is_active: false })
+    .eq("user_id", userId)
+    .in(
+      "id",
+      toPause.map((k) => k.id),
+    );
+
+  if (error) {
+    console.error("[keywords] pauseNoisyTestKeywords falló:", error);
+    return { ok: false, message: "No se pudieron pausar las keywords ruidosas." };
+  }
+
+  revalidatePath("/dashboard/keywords");
+  revalidatePath("/dashboard");
+  return {
+    ok: true,
+    message: `${toPause.length} keywords de prueba pausadas.`,
+  };
+}
+
+/**
+ * @deprecated Prefer `seedSalesKeywords`. Kept as an alias so older UI hooks
+ * keep compiling during the sales-keyword migration.
+ */
+export async function seedTestKeywords(): Promise<KeywordActionResult> {
+  return seedSalesKeywords();
 }
 
 /**

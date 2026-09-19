@@ -5,7 +5,11 @@ import type {
   Keyword,
   UserSettings,
 } from "@/lib/supabase/types";
-import { fetchSubredditPosts, type RedditPost } from "@/lib/reddit/fetcher";
+import {
+  DEFAULT_SUBREDDITS,
+  fetchSubredditPosts,
+  type RedditPost,
+} from "@/lib/reddit/fetcher";
 import { sendTelegramLeadNotification } from "@/lib/telegram/bot";
 import {
   analyzeRedditPost,
@@ -67,10 +71,11 @@ export async function runLeadGenerationPipelineForUser(
   const entries = [...bySubreddit.entries()];
   const results = await mapWithConcurrency(
     entries,
-    ([_sub, subsKeywords]) =>
+    ([sub, subsKeywords]) =>
       processSubreddit(
         supabase,
         userId,
+        sub,
         subsKeywords,
         settings,
         existingPostIds,
@@ -117,6 +122,10 @@ function normalizeSubreddit(subreddit: string): string {
  * Groups active keywords by their normalized subreddit, dropping subreddits
  * that are known to be dead/invalid so we never spend a credit on them.
  *
+ * Keywords targeting `all` are expanded across `DEFAULT_SUBREDDITS` (the
+ * validated sales niche list) instead of scraping r/all, which is noisy and
+ * expensive.
+ *
  * @returns A `Map` of normalized subreddit -> its keywords.
  */
 function groupKeywordsBySubreddit(
@@ -129,17 +138,24 @@ function groupKeywordsBySubreddit(
 
   for (const keyword of keywords) {
     const sub = normalizeSubreddit(keyword.subreddit);
-    if (BLOCKED_SUBREDDITS.has(sub)) {
-      console.warn(
-        `[pipeline] Se omite r/${sub} (subreddit no válido/404) para evitar gastar crédito.`,
-      );
-      continue;
-    }
-    const list = groups.get(sub);
-    if (list) {
-      list.push(keyword);
-    } else {
-      groups.set(sub, [keyword]);
+    const targets =
+      sub === "all"
+        ? DEFAULT_SUBREDDITS.map((s) => s.toLowerCase())
+        : [sub];
+
+    for (const target of targets) {
+      if (BLOCKED_SUBREDDITS.has(target)) {
+        console.warn(
+          `[pipeline] Se omite r/${target} (subreddit no válido/404) para evitar gastar crédito.`,
+        );
+        continue;
+      }
+      const list = groups.get(target);
+      if (list) {
+        list.push(keyword);
+      } else {
+        groups.set(target, [keyword]);
+      }
     }
   }
 
@@ -247,10 +263,14 @@ async function loadExistingPostIds(
  * by the 5-minute in-memory cache) and then filters the posts locally against
  * each keyword that targets this subreddit, so one ScraperAPI credit covers
  * every keyword for it. Mutates `summary`.
+ *
+ * @param subreddit Bare normalized subreddit name (already expanded from
+ *                  `all` when applicable — never pass the literal `"all"`).
  */
 async function processSubreddit(
   supabase: SupabaseServiceClient,
   userId: string,
+  subreddit: string,
   keywords: Pick<Keyword, "id" | "phrase" | "subreddit">[],
   settings: Partial<UserSettings>,
   existingPostIds: Set<string>,
@@ -259,7 +279,9 @@ async function processSubreddit(
   if (keywords.length === 0) return;
 
   // ONE networked fetch per subreddit (cached in-memory for 5 min).
-  const posts = await fetchSubredditPosts(keywords[0]!.subreddit);
+  // Use the map key (`subreddit`), not `keywords[0].subreddit`, because
+  // keywords seeded as `all` are expanded across DEFAULT_SUBREDDITS.
+  const posts = await fetchSubredditPosts(subreddit);
   summary.fetched += posts.length;
 
   for (const keyword of keywords) {

@@ -80,7 +80,8 @@ export function SettingsForm({ settings }: SettingsFormProps) {
         <div>
           <Label>Escaneo automático</Label>
           <p className="text-sm text-muted-foreground">
-            Habilita o deshabilita el monitoreo de Reddit para tu cuenta.
+            Debe estar ON para que el cron automático te escanee. OFF = solo
+            scans manuales con &quot;Run Scan Now&quot;.
           </p>
         </div>
         <label className="relative inline-flex cursor-pointer items-center">

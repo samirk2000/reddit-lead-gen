@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { requireUserId } from "@/lib/supabase/session";
 import { KeywordsManager } from "@/components/dashboard/keywords-manager";
+import { KeywordResearchPanel } from "@/components/dashboard/keyword-research-panel";
 import { DEFAULT_SUBREDDITS } from "@/lib/reddit/fetcher";
 
 export const metadata: Metadata = {
@@ -32,13 +33,16 @@ export default async function KeywordsPage() {
         Keywords
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Define qué frases monitorear en Reddit y en qué subreddits.
+        Investigá frases de alta intención y activá el monitoreo en Reddit.
       </p>
 
-      <KeywordsManager
-        keywords={keywords}
-        defaultSubreddits={[...DEFAULT_SUBREDDITS]}
-      />
+      <div className="mt-6 space-y-6">
+        <KeywordResearchPanel />
+        <KeywordsManager
+          keywords={keywords}
+          defaultSubreddits={[...DEFAULT_SUBREDDITS]}
+        />
+      </div>
     </div>
   );
 }

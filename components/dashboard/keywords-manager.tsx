@@ -22,7 +22,8 @@ import {
   bulkAddKeywords,
   deleteKeyword,
   toggleKeyword,
-  seedTestKeywords,
+  seedSalesKeywords,
+  pauseNoisyTestKeywords,
   type KeywordActionResult,
 } from "@/app/actions/keywords";
 
@@ -185,12 +186,13 @@ function BulkImportForm({
           onChange={(e) => setValue(e.target.value)}
           required
           rows={6}
-          placeholder={`best iptv\niptv provider, IPTVReviews\nfirestick iptv, FireStickHacks\nlooking for iptv, TiviMate`}
+          placeholder={`looking for iptv, TiviMate\nbest player, AndroidTV\nfire stick setup, firetvstick\nneed iptv`}
           className="font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">
           Usa el formato <span className="font-mono">frase, subreddit</span>{" "}
-          por línea. Si omites el subreddit se usará el valor por defecto.
+          por línea. Si omites el subreddit se usará el valor por defecto
+          (<span className="font-mono">all</span> = tus subreddits objetivo).
         </p>
       </div>
 
@@ -223,31 +225,49 @@ function BulkSubmitButton() {
 }
 
 /**
- * One-click button that seeds the broad test keywords via `seedTestKeywords`.
- * Runs inside `useTransition` so the server action never blocks the thread.
+ * Seeds high-intent sales keywords and optionally pauses legacy noisy test
+ * phrases. Prefer this when hunting real buyers instead of broad test seeds.
  */
-function SeedTestKeywordsButton() {
+function SeedSalesKeywordsButton() {
   const { toast } = useToast();
   const [isPending, startTransition] = React.useTransition();
 
-  function handleClick() {
+  function handleSeed() {
     startTransition(async () => {
-      const result = await seedTestKeywords();
+      const result = await seedSalesKeywords();
+      toast(result.message, result.ok ? "success" : "error");
+    });
+  }
+
+  function handlePauseNoisy() {
+    startTransition(async () => {
+      const result = await pauseNoisyTestKeywords();
       toast(result.message, result.ok ? "success" : "error");
     });
   }
 
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      disabled={isPending}
-      onClick={handleClick}
-    >
-      {isPending ? <Spinner /> : <Plus className="size-4" />}
-      {isPending ? "Sembrando…" : "Sembrar keywords de prueba"}
-    </Button>
+    <div className="flex flex-wrap gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={isPending}
+        onClick={handleSeed}
+      >
+        {isPending ? <Spinner /> : <Plus className="size-4" />}
+        {isPending ? "Sembrando…" : "Sembrar keywords de venta"}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={isPending}
+        onClick={handlePauseNoisy}
+      >
+        Pausar keywords ruidosas
+      </Button>
+    </div>
   );
 }
 
@@ -295,17 +315,16 @@ export function KeywordsManager({
                 Agregar keywords
               </h2>
               <p className="text-xs text-muted-foreground">
-                Palabras clave amplias (remote, setup, app, …) para pruebas.
+                Frases de alta intención (looking for iptv, best player, …).
               </p>
             </div>
-            <SeedTestKeywordsButton />
+            <SeedSalesKeywordsButton />
           </div>
           <AddKeywordForm defaultSubreddits={defaultSubreddits} />
           <p className="text-xs text-muted-foreground">
-            El subreddit por defecto es <span className="font-mono">all</span>{" "}
-            (reddit completo). Indica uno específico, p.ej.{" "}
-            <span className="font-mono">marketing</span>, para limitar la
-            búsqueda.
+            <span className="font-mono">all</span> escanea tus subreddits
+            objetivo (TiviMate, AndroidTV, cordcutters, …). Usa un subreddit
+            específico solo si quieres limitar el alcance.
           </p>
         </CardContent>
       </Card>

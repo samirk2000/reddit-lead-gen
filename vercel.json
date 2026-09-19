@@ -1,0 +1,21 @@
+/**
+ * Vercel Cron — automatic lead scans.
+ *
+ * Every 2 hours. Requires:
+ *   1. `CRON_SECRET` set in the Vercel project env
+ *   2. User(s) with `user_settings.is_active = true`
+ *   3. Hobby plan: Vercel only allows 1 cron/day — change schedule to
+ *      `0 14 * * *` (once daily UTC) if you are on Hobby; keep `0 */2 * * *`
+ *      on Pro.
+ *
+ * Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. The route
+ * also accepts `?token=<CRON_SECRET>` for manual / external schedulers.
+ */
+{
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "0 */2 * * *"
+    }
+  ]
+}
