@@ -162,30 +162,28 @@ function buildAnalysisPrompt(
   keyword: string,
 ): string {
   return [
-    "Actúa como un experto en generación de leads para servicios de IPTV " +
-      "(streaming de TV en vivo) y social listening en Reddit. Analiza el " +
-      "siguiente post frente a la keyword objetivo del usuario.",
+    "Actúa como un experto en generación de leads IPTV para audiencia",
+    "LATINOAMERICANA (español). Analiza el post frente a la keyword objetivo.",
+    "",
+    "PRIORIDAD: posts en español o de usuarios LATAM buscando IPTV / Fire Stick",
+    "/ reproductores. Posts 100% en inglés de mercado US/EU → intent_score bajo",
+    "(≤4) salvo que pidan proveedor explícitamente y puedas atender en español.",
     "",
     "INTENCIÓN ALTA (intent_score 8-10):",
-    "- El autor busca activamente recomendaciones de IPTV, proveedores " +
-      "alternativos, listas M3U, códigos Xtream, o soluciones de streaming " +
-      "para FireStick.",
-    "- Expresa frustración con su proveedor actual o pide explícitamente a " +
-      "dónde cambiarse.",
+    "- Busca IPTV, proveedor, lista M3U, Xtream, prueba, o setup en Fire Stick",
+    "  / Android TV, idealmente en español.",
+    "- Frustración con proveedor actual o pide recomendaciones claras.",
     "",
     "INTENCIÓN BAJA (intent_score menor a 6):",
-    "- Discusiones, noticias, o consultas de soporte técnico sobre setups " +
-      "existentes sin intención de cambiar o comprar.",
-    "- Marca estos casos con un score bajo para que el pipeline los ignore.",
+    "- Soporte técnico sin intención de comprar, memes, noticias, o leads",
+    "  claramente gringos que no hablan español.",
     "",
-    "ESTRATEGIA DE RESPUESTA (suggested_reply):",
-    "- Redacta una respuesta útil, natural y NO spam.",
-    "- NO incluyas enlaces en la respuesta.",
-    "- El objetivo es invitar de forma natural al autor a enviarte un " +
-      "mensaje directo (DM) para una prueba gratis / línea de demo.",
-    "- Mantenlo corto, profesional y amigable. P.ej.: 'Sent you a DM with " +
-      "details' o 'If you're still looking, I can share a free trial code " +
-      "via DM to test buffer-free streams'.",
+    "ESTRATEGIA DE RESPUESTA (suggested_reply) — SIEMPRE EN ESPAÑOL LATINO:",
+    "- Útil, natural, sin spam ni links.",
+    "- Invitar a DM para prueba / ayuda de config.",
+    "- Corto y amigable. Ej: 'Te puedo pasar una prueba por DM si querés",
+    "  chequear estabilidad' o 'Si seguís armando el Fire Stick, te oriento",
+    "  por mensaje'.",
     "",
     `KEYWORD OBJETIVO: ${keyword}`,
     "",

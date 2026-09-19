@@ -23,7 +23,7 @@ import type { KeywordCandidate } from "@/lib/ai/keyword-research";
 export function KeywordResearchPanel() {
   const { toast } = useToast();
   const [niche, setNiche] = React.useState(
-    "IPTV Fire Stick Android TV TiviMate",
+    "IPTV Fire Stick Latinoamérica español",
   );
   const [busy, setBusy] = React.useState<"idle" | "research" | "apply">("idle");
   const [candidates, setCandidates] = React.useState<KeywordCandidate[]>([]);

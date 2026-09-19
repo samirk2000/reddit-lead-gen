@@ -15,33 +15,37 @@ const MAX_PHRASE_LENGTH = 200;
 const MAX_SUBREDDIT_LENGTH = 100;
 
 /**
- * High-intent sales phrases for the IPTV / Fire Stick / player niche.
- * Prefer compound phrases so word-boundary matching stays precise and Gemini
- * only sees posts with real buying/setup pain.
+ * High-intent sales phrases for LATAM Spanish speakers (IPTV / Fire Stick /
+ * players). Compound phrases keep word-boundary matching precise.
  *
  * Seeded against `all`, which the pipeline expands to `DEFAULT_SUBREDDITS`.
  */
 const SALES_KEYWORDS = [
-  "looking for iptv",
-  "need iptv",
-  "best iptv",
-  "iptv recommendation",
-  "recommend iptv",
-  "iptv provider",
-  "iptv service",
-  "fire stick setup",
-  "firestick setup",
-  "setup help",
-  "best player",
-  "tivimate setup",
-  "smarters setup",
-  "not working",
-  "alternative to",
-  "cord cutting",
-  "looking for provider",
-  "free trial",
-  "which iptv",
-  "any recommendations",
+  "busco iptv",
+  "necesito iptv",
+  "mejor iptv",
+  "recomiendan iptv",
+  "proveedor iptv",
+  "iptv barato",
+  "iptv estable",
+  "iptv mexico",
+  "iptv méxico",
+  "iptv argentina",
+  "iptv colombia",
+  "iptv chile",
+  "iptv peru",
+  "configurar fire stick",
+  "configurar firestick",
+  "configurar tivimate",
+  "configurar smarters",
+  "mejor reproductor",
+  "lista m3u",
+  "prueba gratis",
+  "cuál iptv",
+  "que iptv",
+  "recomiendan proveedor",
+  "android tv iptv",
+  "fire stick iptv",
 ] as const;
 
 /**

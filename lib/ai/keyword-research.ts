@@ -94,7 +94,7 @@ export async function researchKeywordsWithGemini(
   userApiKey?: string,
 ): Promise<Omit<KeywordResearchResult, "trendsEnriched" | "notes">> {
   const apiKey = resolveGeminiKey(userApiKey);
-  const niche = nicheSeed.trim() || "IPTV Fire Stick Android TV players";
+  const niche = nicheSeed.trim() || "IPTV Fire Stick Latinoamérica español";
   const prompt = buildResearchPrompt(niche, samplePostTitles);
 
   const genAI = new GoogleGenAI({ apiKey });
@@ -149,21 +149,24 @@ function buildResearchPrompt(niche: string, sampleTitles: string[]): string {
       : "(sin muestras de Reddit disponibles en este momento)";
 
   return [
-    "Eres un investigador SEO / lead-gen estilo Semrush especializado en",
-    "IPTV, Fire Stick, Android TV, TiviMate, Smarters y cord-cutting.",
+    "Eres un investigador SEO / lead-gen especializado en audiencia",
+    "LATINOAMERICANA de habla hispana: IPTV, Fire Stick, Android TV,",
+    "TiviMate, Smarters y cord-cutting en México, Argentina, Colombia,",
+    "Chile, Perú, España LATAM, etc.",
     "",
-    "Tu trabajo: proponer frases de ALTA INTENCIÓN que la gente escribe cuando",
-    "está a punto de pedir recomendación o comprar (Reddit, Quora, Google).",
+    "Tu trabajo: proponer frases de ALTA INTENCIÓN en ESPAÑOL que la gente",
+    "escribe cuando está por pedir recomendación o comprar (Reddit, Quora,",
+    "Google, grupos).",
     "",
     "REGLAS:",
-    "- Frases de 2 a 5 palabras (compuestas). Evita genéricos de 1 palabra",
-    "  (best, setup, app, remote) que generan falsos positivos.",
-    "- Mezcla: buying intent, setup pain, comparación, provider hunt.",
+    "- Frases en español latino, 2 a 5 palabras. Evita genéricos de 1 palabra.",
+    "- Incluye variantes regionales (mexico/méxico, barato, estable, prueba).",
+    "- Mezcla: comprar, configurar, comparar proveedores, dolor de buffering.",
     "- suggested_subreddit: uno de firetvstick, smartersiptv, TiviMate,",
     "  AndroidTV, cordcutters, Stremio, sideloaded, iptv, o `all`.",
-    "- intent_score 8-10 solo si suena a 'estoy buscando / necesito / recomiendan'.",
+    "- intent_score 8-10 solo si suena a 'busco / necesito / recomiendan'.",
     "- Máximo 25 candidates, ordenados por intent_score desc.",
-    "- Idioma: inglés (el tráfico del nicho en Reddit es mayoritariamente EN).",
+    "- NO propongas frases en inglés salvo que sean marcas (TiviMate, Fire Stick).",
     "",
     `NICHO: ${niche}`,
     "",

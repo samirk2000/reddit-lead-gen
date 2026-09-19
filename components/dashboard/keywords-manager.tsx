@@ -315,7 +315,7 @@ export function KeywordsManager({
                 Agregar keywords
               </h2>
               <p className="text-xs text-muted-foreground">
-                Frases de alta intención (looking for iptv, best player, …).
+                Frases en español LATAM (busco iptv, iptv méxico, …).
               </p>
             </div>
             <SeedSalesKeywordsButton />

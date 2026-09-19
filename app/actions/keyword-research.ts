@@ -30,7 +30,7 @@ export type ApplyResearchResult = {
   added: number;
 };
 
-const DEFAULT_NICHE = "IPTV Fire Stick Android TV TiviMate cord cutting";
+const DEFAULT_NICHE = "IPTV Fire Stick Latinoamérica español México Argentina Colombia";
 
 /**
  * Runs in-app keyword research (Gemini + optional Google Trends via SerpAPI).
@@ -73,7 +73,7 @@ export async function runKeywordResearch(
     );
 
     const enrichment = await fetchGoogleTrendsEnrichment(
-      niche.split(/\s+/).slice(0, 4).join(" ") || "IPTV Fire Stick",
+      "IPTV Fire Stick México",
       base.candidates.map((c) => c.phrase),
     );
     notes.push(...enrichment.notes);
