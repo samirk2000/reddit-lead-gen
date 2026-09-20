@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, KeyRound, Settings, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type NavItem = {
   href: string;
@@ -49,6 +50,10 @@ export function SideNav() {
           );
         })}
       </nav>
+
+      <div className="border-t border-border p-3">
+        <ThemeToggle className="w-full justify-start gap-2" />
+      </div>
     </aside>
   );
 }

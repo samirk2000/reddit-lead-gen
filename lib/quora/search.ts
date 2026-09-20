@@ -1,8 +1,9 @@
 /**
  * Quora lead discovery via SerpAPI Google (`site:quora.com`).
  *
- * Requires `SERPAPI_KEY` in the server env (Vercel). Results are filtered to
- * IPTV / Fire Stick / player niche so random Quora junk never becomes a lead.
+ * Filtering is driven by the user's active keywords (same idea as Reddit):
+ * Google is queried with those phrases, then organic hits must match at least
+ * one keyword before becoming a lead.
  */
 
 export type QuoraHit = {
@@ -15,19 +16,13 @@ export type QuoraHit = {
 
 export type QuoraSearchResult = {
   hits: QuoraHit[];
-  /** Human-readable failure (API key, HTTP, SerpAPI error body). */
   error: string | null;
   query: string;
-  /** True when SERPAPI_KEY is present (never logs the raw key). */
   keyConfigured: boolean;
 };
 
-/** Must appear in title or snippet or we drop the hit as off-niche. */
-const NICHE_RE =
-  /\b(iptv|m3u|xtream|tivimate|smarters|fire\s*stick|firestick|android\s*tv|cord\s*cut|streaming|proveedor|lista\s*iptv|kodi)\b/i;
-
 /**
- * Searches Quora questions for the given phrases via Google.
+ * Searches Quora using the caller's keyword phrases.
  */
 export async function searchQuoraQuestions(
   phrases: string[],
@@ -37,33 +32,32 @@ export async function searchQuoraQuestions(
     return {
       hits: [],
       error:
-        "Falta SERPAPI_KEY en el servidor (Vercel → Environment Variables). La key de .env.local no se usa en producción.",
+        "Falta SERPAPI_KEY en el servidor (Vercel → Environment Variables).",
       query: "",
       keyConfigured: false,
     };
   }
 
-  // Prefer phrases that already look niche; drop ultra-generic ones that
-  // pollute Google ("prueba gratis", "cuál", etc.).
-  const clean = phrases
-    .map((p) => p.trim())
-    .filter((p) => p.length >= 3)
-    .filter((p) => NICHE_RE.test(p) || /\biptv\b/i.test(p))
-    .slice(0, 3);
+  const clean = [
+    ...new Set(
+      phrases.map((p) => p.trim()).filter((p) => p.length >= 3),
+    ),
+  ].slice(0, 5);
 
-  const fallbackPhrases = [
-    "busco iptv",
-    "mejor iptv",
-    "iptv fire stick",
-    "proveedor iptv",
-  ];
-  const effective = clean.length > 0 ? clean : fallbackPhrases;
+  if (clean.length === 0) {
+    return {
+      hits: [],
+      error: "No hay keywords activas para buscar en Quora.",
+      query: "",
+      keyConfigured: true,
+    };
+  }
 
-  const quoted = effective
+  // Query built FROM keywords — not a hardcoded niche dump.
+  const quoted = clean
     .map((p) => `"${p.replace(/"/g, "")}"`)
     .join(" OR ");
-  // Tight query: every result must be on Quora AND niche-related.
-  const q = `site:quora.com iptv (${quoted})`;
+  const q = `site:quora.com (${quoted})`;
 
   try {
     const params = new URLSearchParams({
@@ -99,21 +93,12 @@ export async function searchQuoraQuestions(
       };
     }
 
-    if (!res.ok) {
+    if (!res.ok || data.error) {
       return {
         hits: [],
         error:
           data.error ||
-          `SerpAPI HTTP ${res.status}. Revisá que la API key nueva esté en Vercel y redeploy.`,
-        query: q,
-        keyConfigured: true,
-      };
-    }
-
-    if (data.error) {
-      return {
-        hits: [],
-        error: `SerpAPI: ${data.error}`,
+          `SerpAPI HTTP ${res.status}. Revisá la key en Vercel y redeploy.`,
         query: q,
         keyConfigured: true,
       };
@@ -121,7 +106,7 @@ export async function searchQuoraQuestions(
 
     const hits: QuoraHit[] = [];
     const seen = new Set<string>();
-    let droppedOffNiche = 0;
+    let droppedNoKeyword = 0;
 
     for (const row of data.organic_results ?? []) {
       const url = row.link?.trim() ?? "";
@@ -130,11 +115,11 @@ export async function searchQuoraQuestions(
 
       const title = (row.title ?? "").trim();
       if (!title) continue;
-
       const snippet = (row.snippet ?? "").trim();
-      const haystack = `${title}\n${snippet}`;
-      if (!NICHE_RE.test(haystack)) {
-        droppedOffNiche++;
+
+      // Keyword gate (same role as Reddit match): must hit at least one phrase.
+      if (!matchesAnyKeyword(`${title}\n${snippet}`, clean)) {
+        droppedNoKeyword++;
         continue;
       }
 
@@ -150,9 +135,9 @@ export async function searchQuoraQuestions(
       hits,
       error:
         hits.length === 0
-          ? droppedOffNiche > 0
-            ? `SerpAPI trajo ${droppedOffNiche} resultados de Quora fuera de nicho (filtrados). Probá keywords con “iptv”.`
-            : "SerpAPI OK pero sin resultados Quora de IPTV. Probá keywords más genéricas del nicho (busco iptv, iptv méxico)."
+          ? droppedNoKeyword > 0
+            ? `Google trajo ${droppedNoKeyword} resultados Quora sin match de tus keywords (filtrados). Ajustá keywords en el panel.`
+            : "Sin resultados Quora para tus keywords. Probá frases más cortas (ej. busco iptv)."
           : null,
       query: q,
       keyConfigured: true,
@@ -168,7 +153,31 @@ export async function searchQuoraQuestions(
   }
 }
 
-/** Short stable hash so Quora URLs fit in `reddit_post_id`. */
+/** Accent-insensitive substring match against any user keyword. */
+function matchesAnyKeyword(haystackRaw: string, phrases: string[]): boolean {
+  const haystack = normalize(haystackRaw);
+  return phrases.some((phrase) => {
+    const needle = normalize(phrase);
+    if (!needle) return false;
+    if (needle.split(/\s+/).length >= 2) return haystack.includes(needle);
+    // Single token: require word-ish boundary to avoid tiny false positives.
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(
+      `(?:^|[^\\p{L}\\p{N}_])${escaped}(?:[^\\p{L}\\p{N}_]|$)`,
+      "iu",
+    ).test(haystack);
+  });
+}
+
+function normalize(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function hashUrl(url: string): string {
   let h = 0;
   for (let i = 0; i < url.length; i++) {

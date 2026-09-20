@@ -17,6 +17,20 @@
     --ring: 24 95% 53%;
   }
 
+  .dark {
+    --background: 240 10% 6%;
+    --foreground: 0 0% 98%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 64%;
+    --card: 240 8% 10%;
+    --card-foreground: 0 0% 98%;
+    --border: 240 4% 18%;
+    --input: 240 4% 18%;
+    --primary: 24 95% 53%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 24 95% 53%;
+  }
+
   * {
     @apply border-border;
   }

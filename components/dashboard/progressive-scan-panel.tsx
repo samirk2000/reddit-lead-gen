@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast";
 import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/theme-toggle";
 import type { ScanEvent, ScanLeadPreview, ScanMode } from "@/lib/pipeline/scan-types";
 
 /**
@@ -152,6 +153,10 @@ export function ProgressiveScanPanel() {
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-foreground">Escaneo</p>
+        <ThemeToggle />
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
