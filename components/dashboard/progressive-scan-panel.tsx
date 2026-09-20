@@ -28,6 +28,7 @@ export function ProgressiveScanPanel() {
     phase: "",
   });
   const [liveLeads, setLiveLeads] = React.useState<ScanLeadPreview[]>([]);
+  const lastErrorRef = React.useRef<string | null>(null);
   const abortRef = React.useRef<AbortController | null>(null);
 
   async function start(mode: ScanMode) {
@@ -36,6 +37,7 @@ export function ProgressiveScanPanel() {
     modeRef.current = mode;
     setPausedLabel(false);
     setLiveLeads([]);
+    lastErrorRef.current = null;
     setProgress({ current: 0, total: 0, label: "", phase: "" });
     setStatus(
       mode === "quora" ? "Iniciando Quora…" : "Iniciando Reddit…",
@@ -111,6 +113,7 @@ export function ProgressiveScanPanel() {
         setLiveLeads((prev) => [event.lead, ...prev].slice(0, 30));
         break;
       case "error":
+        lastErrorRef.current = event.message;
         setStatus(event.message);
         toast(event.message, "error");
         break;
@@ -123,14 +126,16 @@ export function ProgressiveScanPanel() {
             : `Listo · ${s.stored} nuevos · ${s.alerted} alertas · ${s.fetched} revisados · ${s.skippedDedupe} ya vistos`,
         );
         if (!event.paused) {
-          const mode = modeRef.current;
           if (s.fetched === 0) {
-            toast(
-              mode === "quora"
-                ? "Quora sin datos: revisá SERPAPI_KEY en Vercel (la cuenta nueva) y redeploy. Si SerpAPI sigue en 0 créditos, la key no llegó al servidor."
-                : "Reddit sin datos: bloqueo de IP o ScraperAPI sin créditos. Probá Escanear Quora o esperá créditos.",
-              "error",
-            );
+            // Avoid a second contradictory toast if we already explained the error.
+            if (!lastErrorRef.current) {
+              toast(
+                modeRef.current === "quora"
+                  ? "Quora sin hits. Revisá keywords activas o SERPAPI_KEY en Vercel."
+                  : "Reddit sin datos: bloqueo de IP o ScraperAPI sin créditos.",
+                "error",
+              );
+            }
           } else {
             toast(`Escaneo OK: ${s.stored} leads nuevos.`, "success");
           }
