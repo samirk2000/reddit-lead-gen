@@ -20,13 +20,14 @@ Prueba manual del cron:
 curl "https://TU-DOMINIO.vercel.app/api/cron?token=TU_CRON_SECRET"
 ```
 
-### APIs
-| Variable | Para qué |
-|---|---|
-| `GEMINI_API_KEY` | Research + scoring de leads (obligatoria) |
-| `SERPAPI_KEY` | Google Trends enrichment (opcional, https://serpapi.com) |
-| `SCRAPER_API_KEY` | Reddit RSS sin bloqueos |
-| `CRON_SECRET` | Escaneo automático |
+## Canales automatizados
+
+| Canal | Estado | Requiere |
+|---|---|---|
+| Reddit posts | ✅ | ScraperAPI |
+| Reddit **comentarios** | ✅ | ScraperAPI (+1 request/sub) |
+| Quora | ✅ (Google `site:quora.com`) | **SERPAPI_KEY** |
+| YouTube comments | Manual por ahora | — |
 ---
 
 ## 1. Reddit (bot + respuesta humana)

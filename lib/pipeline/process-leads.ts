@@ -7,6 +7,7 @@ import type {
 } from "@/lib/supabase/types";
 import {
   DEFAULT_SUBREDDITS,
+  fetchSubredditComments,
   fetchSubredditPosts,
   type RedditPost,
 } from "@/lib/reddit/fetcher";
@@ -15,6 +16,7 @@ import {
   analyzeRedditPost,
   type RedditPostAnalysis,
 } from "@/lib/ai/gemini";
+import { searchQuoraQuestions } from "@/lib/quora/search";
 
 /** Threshold above which a lead is worth alerting the user about. */
 const ALERT_INTENT_SCORE = 7;
@@ -28,8 +30,9 @@ const ALERT_INTENT_SCORE = 7;
  *      subreddit so we fetch each subreddit's RSS ONCE per scan.
  *   3. Drop known-dead subreddits early (e.g. r/IPTV, r/IPTVReviews) that 404
  *      and would waste a ScraperAPI credit.
- *   4. For each subreddit: fetch the feed once (in-memory cached for 5 min),
- *      then keyword-filter locally and run Gemini on matching posts.
+ *   4. For each subreddit: fetch posts RSS + recent comments listing once,
+ *      keyword-filter locally and run Gemini on matching items.
+ *   5. Optionally search Quora (SerpAPI Google site:quora.com) for LATAM phrases.
  *
  * @param userId The authenticated user's UUID.
  * @returns      A summary of posts fetched, stored, alerted, and skipped.
@@ -95,6 +98,21 @@ export async function runLeadGenerationPipelineForUser(
     }
   }
 
+  // Quora pass (optional): uses SERPAPI_KEY via Google site:quora.com.
+  // Isolated so a Quora/SerpAPI failure never aborts the Reddit results.
+  try {
+    await processQuoraLeads(
+      supabase,
+      userId,
+      keywords,
+      settings,
+      existingPostIds,
+      summary,
+    );
+  } catch (error) {
+    console.error(`[pipeline] Quora pass falló para ${userId}:`, error);
+  }
+
   return summary;
 }
 
@@ -111,7 +129,7 @@ const MAX_CONCURRENT_SUBREDDITS = 2;
  * of `DEFAULT_SUBREDDITS`). `firestickhacks` was removed entirely (verified
  * nonexistent).
  */
-const BLOCKED_SUBREDDITS = new Set(["iptvreviews"]);
+const BLOCKED_SUBREDDITS = new Set(["iptvreviews", "firestickhacks"]);
 
 /** Normalizes a subreddit to a lowercase bare name (no `r/` prefix). */
 function normalizeSubreddit(subreddit: string): string {
@@ -259,13 +277,8 @@ async function loadExistingPostIds(
 }
 
 /**
- * Processes one unique subreddit. Does a SINGLE fetch of its RSS feed (backed
- * by the 5-minute in-memory cache) and then filters the posts locally against
- * each keyword that targets this subreddit, so one ScraperAPI credit covers
- * every keyword for it. Mutates `summary`.
- *
- * @param subreddit Bare normalized subreddit name (already expanded from
- *                  `all` when applicable — never pass the literal `"all"`).
+ * Processes one unique subreddit: posts (RSS) + recent comments (comments.json).
+ * One ScraperAPI credit per listing type per sub (cached 5 min). Mutates `summary`.
  */
 async function processSubreddit(
   supabase: SupabaseServiceClient,
@@ -278,79 +291,181 @@ async function processSubreddit(
 ): Promise<void> {
   if (keywords.length === 0) return;
 
-  // ONE networked fetch per subreddit (cached in-memory for 5 min).
-  // Use the map key (`subreddit`), not `keywords[0].subreddit`, because
-  // keywords seeded as `all` are expanded across DEFAULT_SUBREDDITS.
-  const posts = await fetchSubredditPosts(subreddit);
-  summary.fetched += posts.length;
+  const [posts, comments] = await Promise.all([
+    fetchSubredditPosts(subreddit),
+    fetchSubredditComments(subreddit),
+  ]);
+
+  summary.fetched += posts.length + comments.length;
+  console.log(
+    `[pipeline] r/${subreddit}: ${posts.length} posts + ${comments.length} comentarios`,
+  );
+
+  const items: Array<{ item: RedditPost; kind: "post" | "comment" }> = [
+    ...posts.map((item) => ({ item, kind: "post" as const })),
+    ...comments.map((item) => ({ item, kind: "comment" as const })),
+  ];
 
   for (const keyword of keywords) {
-    for (const post of posts) {
-      if (existingPostIds.has(post.reddit_post_id)) {
-        summary.skippedDedupe++;
-        continue; // already processed
-      }
-
-      if (!matchesKeyword(post, keyword.phrase)) {
-        summary.skippedFilter++;
-        continue; // no keyword match
-      }
-
-      // Resolve per-user API key: settings.gemini_api_key first, env fallback
-      // handled inside analyzeRedditPost.
-      const apiKey = settings.gemini_api_key ?? undefined;
-
-      // A Gemini error on one post must NOT abort the whole subreddit scan.
-      // Log it clearly and skip just this post, keeping the rest flowing.
-      let analysis: RedditPostAnalysis;
-      try {
-        analysis = await analyzeRedditPost(
-          post.title,
-          post.content ?? "",
-          keyword.phrase,
-          apiKey,
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(
-          `[pipeline] Omitiendo post "${truncate(post.title)}" (r/${post.subreddit}) por fallo de Gemini: ${message}`,
-        );
-        continue;
-      }
-
-      // Surface matches + AI score in the console so a manual scan is easy to
-      // eyeball: which post matched which keyword and how Gemini scored intent.
-      console.log(
-        `[AI] Post "${truncate(post.title)}" match con keyword "${keyword.phrase}" -> Score: ${analysis.intent_score}/10`,
+    for (const { item, kind } of items) {
+      await processMatchedItem(
+        supabase,
+        userId,
+        item,
+        kind,
+        keyword,
+        settings,
+        existingPostIds,
+        summary,
       );
-
-      const status = analysis.intent_score >= ALERT_INTENT_SCORE
-        ? "notified"
-        : "archived";
-
-      const lead = await saveLead(supabase, {
-        user_id: userId,
-        keyword_id: keyword.id,
-        reddit_post_id: post.reddit_post_id,
-        title: post.title,
-        content: post.content,
-        author: post.author,
-        post_url: post.post_url,
-        subreddit: post.subreddit,
-        intent_score: analysis.intent_score,
-        analysis_reasoning: analysis.analysis_reasoning,
-        suggested_reply: analysis.suggested_reply,
-        status,
-      });
-
-      summary.stored++;
-      existingPostIds.add(post.reddit_post_id);
-
-      if (status === "notified") {
-        await notifyUser(settings, lead, keyword.phrase);
-        summary.alerted++;
-      }
     }
+  }
+}
+
+/**
+ * Keyword-match → Gemini → save/notify for a single post or comment.
+ */
+async function processMatchedItem(
+  supabase: SupabaseServiceClient,
+  userId: string,
+  item: RedditPost,
+  kind: "post" | "comment",
+  keyword: Pick<Keyword, "id" | "phrase">,
+  settings: Partial<UserSettings>,
+  existingPostIds: Set<string>,
+  summary: PipelineSummary,
+): Promise<void> {
+  if (existingPostIds.has(item.reddit_post_id)) {
+    summary.skippedDedupe++;
+    return;
+  }
+
+  if (!matchesKeyword(item, keyword.phrase)) {
+    summary.skippedFilter++;
+    return;
+  }
+
+  const apiKey = settings.gemini_api_key ?? undefined;
+  let analysis: RedditPostAnalysis;
+  try {
+    analysis = await analyzeRedditPost(
+      item.title,
+      item.content ?? "",
+      keyword.phrase,
+      apiKey,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[pipeline] Omitiendo ${kind} "${truncate(item.title)}" (r/${item.subreddit}) por fallo de Gemini: ${message}`,
+    );
+    return;
+  }
+
+  console.log(
+    `[AI] ${kind === "comment" ? "Comentario" : "Post"} "${truncate(item.title)}" match "${keyword.phrase}" -> Score: ${analysis.intent_score}/10`,
+  );
+
+  const status =
+    analysis.intent_score >= ALERT_INTENT_SCORE ? "notified" : "archived";
+
+  const lead = await saveLead(supabase, {
+    user_id: userId,
+    keyword_id: keyword.id,
+    reddit_post_id: item.reddit_post_id,
+    title: item.title,
+    content: item.content,
+    author: item.author,
+    post_url: item.post_url,
+    subreddit: item.subreddit,
+    intent_score: analysis.intent_score,
+    analysis_reasoning: analysis.analysis_reasoning,
+    suggested_reply: analysis.suggested_reply,
+    status,
+  });
+
+  summary.stored++;
+  existingPostIds.add(item.reddit_post_id);
+
+  if (status === "notified") {
+    await notifyUser(settings, lead, keyword.phrase);
+    summary.alerted++;
+  }
+}
+
+/**
+ * Searches Quora (via SerpAPI Google) for the user's top Spanish keywords and
+ * scores hits with Gemini. Skips entirely when SERPAPI_KEY is missing.
+ */
+async function processQuoraLeads(
+  supabase: SupabaseServiceClient,
+  userId: string,
+  keywords: Pick<Keyword, "id" | "phrase" | "subreddit">[],
+  settings: Partial<UserSettings>,
+  existingPostIds: Set<string>,
+  summary: PipelineSummary,
+): Promise<void> {
+  if (!process.env.SERPAPI_KEY?.trim()) {
+    console.log(
+      "[pipeline] Quora omitido: falta SERPAPI_KEY (Google site:quora.com).",
+    );
+    return;
+  }
+
+  // Cap SerpAPI spend: take up to 3 distinct phrases per scan.
+  const phrases = [
+    ...new Set(keywords.map((k) => k.phrase.trim()).filter(Boolean)),
+  ].slice(0, 3);
+  if (phrases.length === 0) return;
+
+  const hits = await searchQuoraQuestions(phrases);
+  summary.fetched += hits.length;
+  console.log(`[pipeline] Quora: ${hits.length} resultados para ${phrases.join(" | ")}`);
+
+  const keywordByPhrase = new Map(
+    keywords.map((k) => [k.phrase.toLowerCase(), k]),
+  );
+
+  for (const hit of hits) {
+    if (existingPostIds.has(hit.id)) {
+      summary.skippedDedupe++;
+      continue;
+    }
+
+    const matchedKeyword =
+      keywords.find((k) =>
+        matchesKeyword(
+          {
+            reddit_post_id: hit.id,
+            title: hit.title,
+            content: hit.snippet,
+            author: null,
+            post_url: hit.url,
+            subreddit: "quora",
+          },
+          k.phrase,
+        ),
+      ) ?? keywordByPhrase.get(phrases[0]!.toLowerCase()) ?? keywords[0];
+
+    if (!matchedKeyword) continue;
+
+    await processMatchedItem(
+      supabase,
+      userId,
+      {
+        reddit_post_id: hit.id,
+        title: `[Quora] ${hit.title}`,
+        content: hit.snippet,
+        author: null,
+        post_url: hit.url,
+        subreddit: "quora",
+      },
+      "post",
+      matchedKeyword,
+      settings,
+      existingPostIds,
+      summary,
+    );
   }
 }
 
@@ -401,21 +516,39 @@ async function notifyUser(
 }
 
 /**
- * Case-insensitive, whole-word keyword match against a post's title/content.
+ * Case-insensitive keyword match against title/content.
  *
- * Uses regex word boundaries (`\b`) so a keyword like "app" does NOT match
- * inside "Sapphic" or "Application". Multi-word phrases (e.g. "iptv app") match
- * only as the same contiguous text.
+ * Multi-word phrases use normalized accent-insensitive substring match (better
+ * for Spanish: "iptv méxico" ≈ "iptv mexico"). Single-token phrases still use
+ * word boundaries to avoid false positives inside longer words.
  */
 function matchesKeyword(post: RedditPost, phrase: string): boolean {
-  const haystack = `${post.title}\n${post.content ?? ""}`;
-  const escaped = escapeRegExp(phrase.trim());
-  if (!escaped) return false;
+  const haystack = normalizeForMatch(
+    `${post.title}\n${post.content ?? ""}`,
+  );
+  const needle = normalizeForMatch(phrase.trim());
+  if (!needle) return false;
 
-  // `\b` at both ends anchors the match to word boundaries. Multi-word phrases
-  // like "iptv app" then match only when that exact contiguous text appears.
-  const regex = new RegExp(`\\b${escaped}\\b`, "i");
-  return regex.test(haystack);
+  const tokens = needle.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2) {
+    return haystack.includes(needle);
+  }
+
+  const escaped = escapeRegExp(tokens[0] ?? "");
+  if (!escaped) return false;
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}_])${escaped}(?:[^\\p{L}\\p{N}_]|$)`, "iu").test(
+    haystack,
+  );
+}
+
+/** Lowercase + strip combining accents for Spanish-tolerant matching. */
+function normalizeForMatch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Escapes regex metacharacters so a literal user keyword is matched verbatim. */

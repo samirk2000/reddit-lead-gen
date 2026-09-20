@@ -106,6 +106,14 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
  */
 const feedCache = new Map<string, { posts: RedditPost[]; expiresAt: number }>();
 
+/** Separate cache for the recent-comments listing (also 5 min TTL). */
+const commentCache = new Map<
+  string,
+  { posts: RedditPost[]; expiresAt: number }
+>();
+
+/** Max recent comments to pull per subreddit listing. */
+const DEFAULT_COMMENT_LIMIT = 50;
 /** Re-usable RSS parser instance (stateless once configured). */
 const rssParser = new Parser<{ [key: string]: unknown }, RedditRssItem>({
   // Expose the raw content string so we can strip Reddit's SC_ON/SC_OFF markers.
@@ -167,6 +175,194 @@ export async function fetchSubredditPosts(
   // Cache the result (even empty/blocked feeds, so we don't immediately retry
   // a subreddit that transiently failed within the TTL window).
   feedCache.set(sub, { posts, expiresAt: Date.now() + CACHE_TTL_MS });
+
+  return posts;
+}
+
+/**
+ * Fetches the newest comments across a subreddit (not just under one post).
+ *
+ * Uses Reddit's public listing ` /r/{sub}/comments.json` — one request covers
+ * many threads, which is where high-intent buyers often write ("busco iptv",
+ * "me recomiendan…") instead of opening a new post.
+ *
+ * Same ScraperAPI + direct-fallback strategy as the RSS post fetcher.
+ */
+export async function fetchSubredditComments(
+  subreddit: string,
+  limit: number = DEFAULT_COMMENT_LIMIT,
+): Promise<RedditPost[]> {
+  const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+  const sub = normalizeSubname(subreddit) || DEFAULT_SUBREDDITS[0] || "TiviMate";
+
+  const cached = commentCache.get(sub);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.posts.slice(0, safeLimit);
+  }
+
+  const comments = await fetchSubredditCommentsListing(sub, safeLimit);
+  commentCache.set(sub, {
+    posts: comments,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+  return comments;
+}
+
+/**
+ * Performs the networked fetch + JSON parse for a subreddit's recent comments.
+ */
+async function fetchSubredditCommentsListing(
+  sub: string,
+  safeLimit: number,
+): Promise<RedditPost[]> {
+  const jsonUrl = `https://www.reddit.com/r/${encodeURIComponent(
+    sub,
+  )}/comments.json?limit=${safeLimit}&raw_json=1`;
+
+  if (process.env.SCRAPER_API_KEY?.trim()) {
+    const viaProxy = await fetchJsonListingOnce(
+      jsonUrl,
+      SCRAPER_API_HEADERS,
+      FETCH_TIMEOUT_MS_SCRAPER_API,
+      true,
+      sub,
+      safeLimit,
+    );
+    if (viaProxy.status === "ok") return viaProxy.posts;
+    console.warn(
+      `[reddit] ScraperAPI falló en comments de r/${sub}; reintentando directo.`,
+    );
+  }
+
+  const direct = await fetchJsonListingOnce(
+    jsonUrl,
+    {
+      ...REDDIT_HEADERS,
+      Accept: "application/json",
+    },
+    FETCH_TIMEOUT_MS,
+    false,
+    sub,
+    safeLimit,
+  );
+  return direct.posts;
+}
+
+/**
+ * One strategy (proxy or direct) for the comments.json listing.
+ */
+async function fetchJsonListingOnce(
+  targetUrl: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  viaProxy: boolean,
+  sub: string,
+  safeLimit: number,
+): Promise<{ status: "ok" | "fail"; posts: RedditPost[] }> {
+  const fetchUrl = viaProxy ? toScraperApiUrl(targetUrl) : targetUrl;
+
+  let response: Response;
+  try {
+    response = await fetchWithRetry(() =>
+      fetchWithTimeout(fetchUrl, headers, timeoutMs),
+    );
+  } catch (error) {
+    console.warn(
+      `[reddit] comments ${viaProxy ? "ScraperAPI" : "directo"} falló para r/${sub}:`,
+      error,
+    );
+    return { status: "fail", posts: [] };
+  }
+
+  if (!response.ok) {
+    console.warn(
+      `[reddit] comments r/${sub} → ${response.status} via ${viaProxy ? "ScraperAPI" : "directo"}; se omite.`,
+    );
+    return { status: "fail", posts: [] };
+  }
+
+  const raw = await response.text();
+  if (!raw.trim() || isHtmlResponse(raw)) {
+    console.warn(
+      `[reddit] comments r/${sub} devolvió HTML/vacío (bloqueo); se omite.`,
+    );
+    return { status: "fail", posts: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as RedditListingResponse;
+    const posts = mapCommentListingToPosts(parsed, sub).slice(0, safeLimit);
+    return { status: "ok", posts };
+  } catch (error) {
+    console.error(`[reddit] No se pudo parsear comments.json de r/${sub}:`, error);
+    return { status: "fail", posts: [] };
+  }
+}
+
+type RedditListingResponse = {
+  data?: {
+    children?: Array<{
+      kind?: string;
+      data?: {
+        id?: string;
+        name?: string;
+        body?: string;
+        author?: string;
+        permalink?: string;
+        link_title?: string;
+        link_id?: string;
+        subreddit?: string;
+      };
+    }>;
+  };
+};
+
+/**
+ * Maps a Reddit comments listing into the same `RedditPost` shape the pipeline
+ * already consumes. `reddit_post_id` is prefixed with `c_` so comment leads
+ * never collide with submission ids from the RSS path.
+ */
+function mapCommentListingToPosts(
+  listing: RedditListingResponse,
+  fallbackSub: string,
+): RedditPost[] {
+  const posts: RedditPost[] = [];
+  const children = listing.data?.children ?? [];
+
+  for (const child of children) {
+    if (child.kind !== "t1" || !child.data) continue;
+    const body = cleanText(child.data.body);
+    if (!body || body === "[deleted]" || body === "[removed]") continue;
+
+    const id = child.data.id?.trim();
+    if (!id) continue;
+
+    const permalink = child.data.permalink?.trim() ?? "";
+    const postUrl = permalink
+      ? permalink.startsWith("http")
+        ? permalink
+        : `https://www.reddit.com${permalink}`
+      : "";
+    if (!postUrl) continue;
+
+    const linkTitle = cleanText(child.data.link_title) || "(comentario)";
+    const author =
+      typeof child.data.author === "string" &&
+      child.data.author &&
+      child.data.author !== "[deleted]"
+        ? child.data.author
+        : null;
+
+    posts.push({
+      // Prefix avoids colliding with submission ids from RSS.
+      reddit_post_id: `c_${id}`,
+      title: `Comentario en: ${linkTitle}`.slice(0, 300),
+      content: body,
+      author,
+      post_url: postUrl,
+      subreddit: child.data.subreddit?.trim() || fallbackSub,
+    });
+  }
 
   return posts;
 }
