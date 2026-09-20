@@ -14,6 +14,14 @@
  */
 
 import Parser from "rss-parser";
+import {
+  isScraperKeyFailure,
+  listScraperApiKeys,
+  markScraperKeyDead,
+  redactKey,
+  scraperApiEnabled,
+  toScraperApiUrl,
+} from "@/lib/reddit/scraper-keys";
 
 /** A normalized Reddit post used by the lead detection pipeline. */
 export type RedditPost = {
@@ -266,8 +274,54 @@ async function fetchJsonListingOnce(
   sub: string,
   safeLimit: number,
 ): Promise<{ status: "ok" | "fail"; posts: RedditPost[] }> {
-  const fetchUrl = viaProxy ? toScraperApiUrl(targetUrl) : targetUrl;
+  if (!viaProxy) {
+    return fetchJsonListingWithUrl(
+      targetUrl,
+      headers,
+      timeoutMs,
+      false,
+      sub,
+      safeLimit,
+      null,
+    );
+  }
 
+  const keys = listScraperApiKeys();
+  if (keys.length === 0) return { status: "fail", posts: [] };
+
+  for (let i = 0; i < keys.length; i++) {
+    const apiKey = keys[i]!;
+    const fetchUrl = toScraperApiUrl(targetUrl, apiKey);
+    const outcome = await fetchJsonListingWithUrl(
+      fetchUrl,
+      headers,
+      timeoutMs,
+      true,
+      sub,
+      safeLimit,
+      apiKey,
+    );
+    if (outcome.status === "ok") return outcome;
+    if (outcome.keyDead && i < keys.length - 1) {
+      console.warn(
+        `[reddit] comments r/${sub}: rotando ScraperAPI key (${i + 1}/${keys.length})…`,
+      );
+      continue;
+    }
+    return outcome;
+  }
+  return { status: "fail", posts: [] };
+}
+
+async function fetchJsonListingWithUrl(
+  fetchUrl: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  viaProxy: boolean,
+  sub: string,
+  safeLimit: number,
+  apiKey: string | null,
+): Promise<{ status: "ok" | "fail"; posts: RedditPost[]; keyDead?: boolean }> {
   let response: Response;
   try {
     response = await fetchWithRetry(() =>
@@ -282,10 +336,19 @@ async function fetchJsonListingOnce(
   }
 
   if (!response.ok) {
+    const bodySnippet = (await response.text().catch(() => "")).slice(0, 400);
+    let keyDead = false;
+    if (viaProxy && apiKey && isScraperKeyFailure(response.status, bodySnippet)) {
+      markScraperKeyDead(
+        apiKey,
+        `HTTP ${response.status} (${bodySnippet.slice(0, 80) || "sin body"})`,
+      );
+      keyDead = true;
+    }
     console.warn(
-      `[reddit] comments r/${sub} → ${response.status} via ${viaProxy ? "ScraperAPI" : "directo"}; se omite.`,
+      `[reddit] comments r/${sub} → ${response.status} via ${viaProxy ? `ScraperAPI ${apiKey ? redactKey(apiKey) : ""}` : "directo"}; se omite.`,
     );
-    return { status: "fail", posts: [] };
+    return { status: "fail", posts: [], keyDead };
   }
 
   const raw = await response.text();
@@ -433,33 +496,81 @@ async function fetchSubredditFeedOnce(
   viaProxy: boolean,
   safeLimit: number,
 ): Promise<{ status: "ok" | "fail"; posts: RedditPost[] }> {
-  let fetchUrl = targetUrl;
-  if (viaProxy) {
-    fetchUrl = toScraperApiUrl(targetUrl);
+  if (!viaProxy) {
+    return fetchRssWithUrl(
+      targetUrl,
+      targetUrl,
+      headers,
+      timeoutMs,
+      false,
+      safeLimit,
+      null,
+    );
   }
 
+  const keys = listScraperApiKeys();
+  if (keys.length === 0) return { status: "fail", posts: [] };
+
+  for (let i = 0; i < keys.length; i++) {
+    const apiKey = keys[i]!;
+    const fetchUrl = toScraperApiUrl(targetUrl, apiKey);
+    const outcome = await fetchRssWithUrl(
+      fetchUrl,
+      targetUrl,
+      headers,
+      timeoutMs,
+      true,
+      safeLimit,
+      apiKey,
+    );
+    if (outcome.status === "ok") return outcome;
+    if (outcome.keyDead && i < keys.length - 1) {
+      console.warn(
+        `[reddit] RSS: rotando ScraperAPI key (${i + 1}/${keys.length})…`,
+      );
+      continue;
+    }
+    return outcome;
+  }
+  return { status: "fail", posts: [] };
+}
+
+async function fetchRssWithUrl(
+  fetchUrl: string,
+  originalTargetUrl: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  viaProxy: boolean,
+  safeLimit: number,
+  apiKey: string | null,
+): Promise<{ status: "ok" | "fail"; posts: RedditPost[]; keyDead?: boolean }> {
   let response: Response;
   try {
-    // Retries rate-limits (429/403/503) and timeouts internally; network
-    // errors timeouts are retried, then thrown so we can fall back.
     response = await fetchWithRetry(() =>
       fetchWithTimeout(fetchUrl, headers, timeoutMs),
     );
   } catch (error) {
     console.warn(
-      `[reddit] ${viaProxy ? "ScraperAPI" : "Fetch directo"} sin éxito para r/${extractSubFromUrl(targetUrl)} tras reintentos:`,
+      `[reddit] ${viaProxy ? "ScraperAPI" : "Fetch directo"} sin éxito para r/${extractSubFromUrl(originalTargetUrl)} tras reintentos:`,
       error,
     );
     return { status: "fail", posts: [] };
   }
 
-  // 1. Validate HTTP status: treat any non-OK response (404, 403, 429, 5xx…)
-  // as a per-subreddit failure — log it and skip without aborting the pipeline.
   if (!response.ok) {
+    const bodySnippet = (await response.text().catch(() => "")).slice(0, 400);
+    let keyDead = false;
+    if (viaProxy && apiKey && isScraperKeyFailure(response.status, bodySnippet)) {
+      markScraperKeyDead(
+        apiKey,
+        `HTTP ${response.status} (${bodySnippet.slice(0, 80) || "sin body"})`,
+      );
+      keyDead = true;
+    }
     console.warn(
-      `[reddit] r/${extractSubFromUrl(targetUrl)} respondió ${response.status} via ${viaProxy ? "ScraperAPI" : "directo"}; se omite el subreddit.`,
+      `[reddit] r/${extractSubFromUrl(originalTargetUrl)} respondió ${response.status} via ${viaProxy ? `ScraperAPI ${apiKey ? redactKey(apiKey) : ""}` : "directo"}; se omite.`,
     );
-    return { status: "fail", posts: [] };
+    return { status: "fail", posts: [], keyDead };
   }
 
   const xmlRaw = await response.text();
@@ -468,8 +579,6 @@ async function fetchSubredditFeedOnce(
     return { status: "fail", posts: [] };
   }
 
-  // 2. Detect HTML responses: a 200/206 with an HTML body means Reddit
-  // returned a block/CAPTCHA/error page instead of RSS. Bail out gracefully.
   if (isHtmlResponse(xmlRaw)) {
     console.warn(
       `[reddit] El subreddit devolvió una página HTML (bloqueo/CAPTCHA) via ${viaProxy ? "ScraperAPI" : "directo"}; se omite.`,
@@ -477,9 +586,6 @@ async function fetchSubredditFeedOnce(
     return { status: "fail", posts: [] };
   }
 
-  // 3. Sanitize the XML before parsing: strip invalid XML control characters,
-  // escape loose ampersands, and drop corrupt tags to avoid "Invalid character
-  // in tag name" / "Invalid character in entity name" errors.
   const cleanXml = sanitizeXml(xmlRaw);
 
   let feed: { items?: RedditRssItem[] };
@@ -490,14 +596,16 @@ async function fetchSubredditFeedOnce(
     return { status: "fail", posts: [] };
   }
 
-  // Guard against a parsed-but-empty feed (e.g. malformed RSS).
   if (!Array.isArray(feed.items) || feed.items.length === 0) {
     console.warn(`[reddit] Feed sin items.`);
     return { status: "fail", posts: [] };
   }
 
-  const sub = extractSubFromUrl(targetUrl);
-  return { status: "ok", posts: mapRssItemsToPosts(feed.items, sub).slice(0, safeLimit) };
+  const sub = extractSubFromUrl(originalTargetUrl);
+  return {
+    status: "ok",
+    posts: mapRssItemsToPosts(feed.items, sub).slice(0, safeLimit),
+  };
 }
 
 /** Pulls the subreddit name out of a `.../r/{sub}/new.rss` URL for logging. */
@@ -539,36 +647,6 @@ function sanitizeXml(xml: string): string {
       // Newline/whitespace-only "tags" that aren't real elements.
       .replace(/<\s+>/g, " ")
   );
-}
-
-/**
- * Routes a target URL through ScraperAPI when enabled.
- *
- * Credit policy:
- *   - `premium` is OFF by default. On Free plans premium burns ~10–25 credits
- *     per request and emptied the monthly quota in a few scans. Set
- *     `SCRAPER_API_PREMIUM=true` only if you are on a paid plan and need it.
- *   - `render` stays OFF so RSS/JSON stay raw, not HTML.
- *   - Disable the proxy entirely with `SCRAPER_API_ENABLED=false` (direct only).
- */
-function toScraperApiUrl(targetUrl: string): string {
-  const apiKey = process.env.SCRAPER_API_KEY?.trim();
-  if (!apiKey) return targetUrl;
-
-  const params = new URLSearchParams({
-    api_key: apiKey,
-    url: targetUrl,
-  });
-  if (process.env.SCRAPER_API_PREMIUM?.trim() === "true") {
-    params.set("premium", "true");
-  }
-  return `http://api.scraperapi.com?${params.toString()}`;
-}
-
-/** Whether ScraperAPI may be used (key present and not explicitly disabled). */
-function scraperApiEnabled(): boolean {
-  if (process.env.SCRAPER_API_ENABLED?.trim() === "false") return false;
-  return Boolean(process.env.SCRAPER_API_KEY?.trim());
 }
 
 /**
