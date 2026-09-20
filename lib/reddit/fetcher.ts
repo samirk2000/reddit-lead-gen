@@ -219,21 +219,6 @@ async function fetchSubredditCommentsListing(
     sub,
   )}/comments.json?limit=${safeLimit}&raw_json=1`;
 
-  if (process.env.SCRAPER_API_KEY?.trim()) {
-    const viaProxy = await fetchJsonListingOnce(
-      jsonUrl,
-      SCRAPER_API_HEADERS,
-      FETCH_TIMEOUT_MS_SCRAPER_API,
-      true,
-      sub,
-      safeLimit,
-    );
-    if (viaProxy.status === "ok") return viaProxy.posts;
-    console.warn(
-      `[reddit] ScraperAPI falló en comments de r/${sub}; reintentando directo.`,
-    );
-  }
-
   const direct = await fetchJsonListingOnce(
     jsonUrl,
     {
@@ -245,7 +230,29 @@ async function fetchSubredditCommentsListing(
     sub,
     safeLimit,
   );
-  return direct.posts;
+  if (direct.status === "ok" && direct.posts.length > 0) {
+    return direct.posts;
+  }
+
+  if (!scraperApiEnabled()) {
+    console.warn(
+      `[reddit] comments r/${sub}: directo vacío y ScraperAPI off.`,
+    );
+    return direct.posts;
+  }
+
+  console.warn(
+    `[reddit] comments r/${sub}: directo falló; ScraperAPI (crédito estándar).`,
+  );
+  const viaProxy = await fetchJsonListingOnce(
+    jsonUrl,
+    SCRAPER_API_HEADERS,
+    FETCH_TIMEOUT_MS_SCRAPER_API,
+    true,
+    sub,
+    safeLimit,
+  );
+  return viaProxy.status === "ok" ? viaProxy.posts : direct.posts;
 }
 
 /**
@@ -375,33 +382,14 @@ function mapCommentListingToPosts(
  * `r/` prefix) by `fetchSubredditPosts`.
  */
 async function fetchSubredditFeed(sub: string, safeLimit: number): Promise<RedditPost[]> {
-  // Reddit serves RSS at `/new.rss`; keep the trailing `.rss` so ScraperAPI
-  // requests the feed and not the HTML site. Tested empirically: `www` (not
-  // `old`) consistently returns the raw XML through ScraperAPI premium — `old`
-  // would return the rendered HTML block page instead.
+  // Reddit serves RSS at `/new.rss`. Strategy (credit-safe):
+  //   1. Try DIRECT first (0 ScraperAPI credits).
+  //   2. Only if that fails/blocks, optionally use ScraperAPI (standard plan,
+  //      premium only when SCRAPER_API_PREMIUM=true — premium burns 10-25x credits).
   const rssUrl = `https://www.reddit.com/r/${encodeURIComponent(
     sub,
   )}/new.rss`;
 
-  if (process.env.SCRAPER_API_KEY?.trim()) {
-    const viaProxy = await fetchSubredditFeedOnce(
-      rssUrl,
-      SCRAPER_API_HEADERS,
-      FETCH_TIMEOUT_MS_SCRAPER_API,
-      true, // wrap in ScraperAPI (premium) proxy
-      safeLimit,
-    );
-    if (viaProxy.status === "ok") {
-      return viaProxy.posts;
-    }
-    console.warn(
-      `[reddit] ScraperAPI falló para r/${sub}; reintentando por fetch directo.`,
-    );
-  }
-
-  // Fallback (or primary when no key): direct fetch to Reddit with a real
-  // browser User-Agent. Reddit may 429/403 datacenter IPs, but it's a free,
-  // cheap resilience net when the premium pool fails or times out.
   const direct = await fetchSubredditFeedOnce(
     rssUrl,
     REDDIT_HEADERS,
@@ -409,7 +397,28 @@ async function fetchSubredditFeed(sub: string, safeLimit: number): Promise<Reddi
     false,
     safeLimit,
   );
-  return direct.posts;
+  if (direct.status === "ok" && direct.posts.length > 0) {
+    return direct.posts;
+  }
+
+  if (!scraperApiEnabled()) {
+    console.warn(
+      `[reddit] r/${sub}: fetch directo sin items y ScraperAPI deshabilitado (créditos?).`,
+    );
+    return direct.posts;
+  }
+
+  console.warn(
+    `[reddit] r/${sub}: directo falló/vacío; probando ScraperAPI (sin premium salvo SCRAPER_API_PREMIUM).`,
+  );
+  const viaProxy = await fetchSubredditFeedOnce(
+    rssUrl,
+    SCRAPER_API_HEADERS,
+    FETCH_TIMEOUT_MS_SCRAPER_API,
+    true,
+    safeLimit,
+  );
+  return viaProxy.status === "ok" ? viaProxy.posts : direct.posts;
 }
 
 /**
@@ -533,23 +542,14 @@ function sanitizeXml(xml: string): string {
 }
 
 /**
- * Routes a target URL through ScraperAPI when `SCRAPER_API_KEY` is configured.
+ * Routes a target URL through ScraperAPI when enabled.
  *
- * Anti-block strategy so Reddit delivers the raw RSS XML instead of an HTML
- * block/CAPTCHA page:
- *   - `premium=true` routes through ScraperAPI's residentially-IP'd premium
- *     pool, which sidesteps the datacenter-IP 429/403 blocks.
- *   - `render` is intentionally NOT set: `render=true` forces a headless
- *     browser to execute JS and returns the rendered HTML *site*, which would
- *     turn an `.rss` response into an HTML page (why the fetcher kept seeing
- *     "página HTML / bloqueo"). For a raw XML feed we want the un-rendered
- *     body.
- *
- * The target URL is passed cleanly (single-encoded) via `URLSearchParams`.
- *
- * @param targetUrl The original URL to scrape (e.g. a Reddit RSS feed).
- * @returns         The ScraperAPI proxy URL, or the original URL unchanged when
- *                  no API key is present in the environment.
+ * Credit policy:
+ *   - `premium` is OFF by default. On Free plans premium burns ~10–25 credits
+ *     per request and emptied the monthly quota in a few scans. Set
+ *     `SCRAPER_API_PREMIUM=true` only if you are on a paid plan and need it.
+ *   - `render` stays OFF so RSS/JSON stay raw, not HTML.
+ *   - Disable the proxy entirely with `SCRAPER_API_ENABLED=false` (direct only).
  */
 function toScraperApiUrl(targetUrl: string): string {
   const apiKey = process.env.SCRAPER_API_KEY?.trim();
@@ -558,11 +558,17 @@ function toScraperApiUrl(targetUrl: string): string {
   const params = new URLSearchParams({
     api_key: apiKey,
     url: targetUrl,
-    // Residential proxy pool to dodge datacenter-IP blocks. render left off:
-    // it would return the rendered HTML page instead of the raw RSS XML.
-    premium: "true",
   });
+  if (process.env.SCRAPER_API_PREMIUM?.trim() === "true") {
+    params.set("premium", "true");
+  }
   return `http://api.scraperapi.com?${params.toString()}`;
+}
+
+/** Whether ScraperAPI may be used (key present and not explicitly disabled). */
+function scraperApiEnabled(): boolean {
+  if (process.env.SCRAPER_API_ENABLED?.trim() === "false") return false;
+  return Boolean(process.env.SCRAPER_API_KEY?.trim());
 }
 
 /**

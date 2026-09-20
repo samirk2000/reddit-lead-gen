@@ -33,10 +33,20 @@ export function RunScanButton() {
           return;
         }
         const s = result.summary;
-        toast(
-          `Escaneo completado: ${s?.stored ?? 0} leads nuevos, ${s?.alerted ?? 0} alertas, ${s?.fetched ?? 0} posts revisados.`,
-          "success",
-        );
+        const fetched = s?.fetched ?? 0;
+        const stored = s?.stored ?? 0;
+        const alerted = s?.alerted ?? 0;
+        if (fetched === 0) {
+          toast(
+            "Escaneo sin datos: Reddit bloqueó o ScraperAPI sin créditos. Revisá Billing de ScraperAPI / poné SCRAPER_API_ENABLED=false y redeploy.",
+            "error",
+          );
+        } else {
+          toast(
+            `Escaneo completado: ${stored} leads nuevos, ${alerted} alertas, ${fetched} items revisados (posts+comentarios+quora).`,
+            "success",
+          );
+        }
         router.refresh();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
