@@ -17,6 +17,7 @@ export function ProgressiveScanPanel() {
   const { toast } = useToast();
   const router = useRouter();
   const [running, setRunning] = React.useState<ScanMode | null>(null);
+  const modeRef = React.useRef<ScanMode>("reddit");
   const [pausedLabel, setPausedLabel] = React.useState(false);
   const [status, setStatus] = React.useState("Listo para escanear.");
   const [progress, setProgress] = React.useState({
@@ -31,6 +32,7 @@ export function ProgressiveScanPanel() {
   async function start(mode: ScanMode) {
     if (running) return;
     setRunning(mode);
+    modeRef.current = mode;
     setPausedLabel(false);
     setLiveLeads([]);
     setProgress({ current: 0, total: 0, label: "", phase: "" });
@@ -120,12 +122,17 @@ export function ProgressiveScanPanel() {
             : `Listo · ${s.stored} nuevos · ${s.alerted} alertas · ${s.fetched} revisados · ${s.skippedDedupe} ya vistos`,
         );
         if (!event.paused) {
-          toast(
-            s.fetched === 0
-              ? "Sin datos (Reddit bloqueó o ScraperAPI sin créditos)."
-              : `Escaneo OK: ${s.stored} leads nuevos.`,
-            s.fetched === 0 ? "error" : "success",
-          );
+          const mode = modeRef.current;
+          if (s.fetched === 0) {
+            toast(
+              mode === "quora"
+                ? "Quora sin datos: revisá SERPAPI_KEY en Vercel (la cuenta nueva) y redeploy. Si SerpAPI sigue en 0 créditos, la key no llegó al servidor."
+                : "Reddit sin datos: bloqueo de IP o ScraperAPI sin créditos. Probá Escanear Quora o esperá créditos.",
+              "error",
+            );
+          } else {
+            toast(`Escaneo OK: ${s.stored} leads nuevos.`, "success");
+          }
         }
         break;
       }

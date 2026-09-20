@@ -266,8 +266,30 @@ async function* scanQuora(
 
   if (signal?.aborted) return;
 
-  const hits = await searchQuoraQuestions(phrases);
+  const result = await searchQuoraQuestions(phrases);
+  if (result.error && result.hits.length === 0) {
+    yield { type: "error", message: result.error };
+    yield {
+      type: "status",
+      message: result.keyConfigured
+        ? `Query: ${result.query.slice(0, 120)}…`
+        : "Configurá SERPAPI_KEY en Vercel → Settings → Environment Variables → Redeploy.",
+    };
+    return;
+  }
+
+  const hits = result.hits;
   summary.fetched += hits.length;
+
+  if (hits.length === 0) {
+    yield {
+      type: "status",
+      message:
+        result.error ??
+        "Quora sin resultados. La key puede estar OK pero Google no indexó esas frases.",
+    };
+    return;
+  }
 
   const fresh = hits.filter((h) => {
     if (existingPostIds.has(h.id)) {

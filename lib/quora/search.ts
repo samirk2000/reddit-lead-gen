@@ -1,12 +1,9 @@
 /**
  * Quora lead discovery via SerpAPI Google (`site:quora.com`).
  *
- * Quora has no stable public API and blocks scrapers aggressively, so we
- * discover questions through Google (which SerpAPI already powers) and store
- * the Quora URLs as leads. Requires `SERPAPI_KEY`.
- *
- * Cost: ~1 SerpAPI search per phrase batch (we OR a few phrases in one query
- * when possible; otherwise 1 search per phrase, capped by the caller).
+ * Requires `SERPAPI_KEY` in the server env (Vercel). If credits stay at 0 after
+ * a Quora scan, the key is missing/wrong in Vercel — updating only .env.local
+ * does not affect production.
  */
 
 export type QuoraHit = {
@@ -17,25 +14,48 @@ export type QuoraHit = {
   url: string;
 };
 
+export type QuoraSearchResult = {
+  hits: QuoraHit[];
+  /** Human-readable failure (API key, HTTP, SerpAPI error body). */
+  error: string | null;
+  query: string;
+  /** True when SERPAPI_KEY is present (never logs the raw key). */
+  keyConfigured: boolean;
+};
+
 /**
- * Searches Quora questions for the given Spanish/LATAM phrases.
- * Returns [] when `SERPAPI_KEY` is missing or every request fails.
+ * Searches Quora questions for the given phrases via Google.
  */
 export async function searchQuoraQuestions(
   phrases: string[],
-): Promise<QuoraHit[]> {
+): Promise<QuoraSearchResult> {
   const apiKey = process.env.SERPAPI_KEY?.trim();
-  if (!apiKey) return [];
+  if (!apiKey) {
+    return {
+      hits: [],
+      error:
+        "Falta SERPAPI_KEY en el servidor (Vercel → Environment Variables). La key de .env.local no se usa en producción.",
+      query: "",
+      keyConfigured: false,
+    };
+  }
 
   const clean = phrases.map((p) => p.trim()).filter((p) => p.length >= 3);
-  if (clean.length === 0) return [];
+  if (clean.length === 0) {
+    return {
+      hits: [],
+      error: "No hay phrases válidas para buscar en Quora.",
+      query: "",
+      keyConfigured: true,
+    };
+  }
 
-  // One Google query: site:quora.com ("frase1" OR "frase2" OR …) — saves credits.
-  const orClause = clean
+  // Broader query: exact phrases OR loose keywords (quoted-only was too strict).
+  const quoted = clean
     .slice(0, 3)
     .map((p) => `"${p.replace(/"/g, "")}"`)
     .join(" OR ");
-  const q = `site:quora.com (${orClause})`;
+  const q = `site:quora.com (${quoted}) OR (site:quora.com iptv (méxico OR mexico OR argentina OR "fire stick" OR proveedor))`;
 
   try {
     const params = new URLSearchParams({
@@ -50,18 +70,47 @@ export async function searchQuoraQuestions(
     const res = await fetch(`https://serpapi.com/search.json?${params}`, {
       cache: "no-store",
     });
-    if (!res.ok) {
-      console.warn(`[quora] SerpAPI Google HTTP ${res.status}`);
-      return [];
-    }
 
-    const data = (await res.json()) as {
+    const rawText = await res.text();
+    let data: {
+      error?: string;
+      search_metadata?: { status?: string };
       organic_results?: Array<{
         title?: string;
         link?: string;
         snippet?: string;
       }>;
-    };
+    } = {};
+    try {
+      data = JSON.parse(rawText) as typeof data;
+    } catch {
+      return {
+        hits: [],
+        error: `SerpAPI devolvió cuerpo no-JSON (HTTP ${res.status}).`,
+        query: q,
+        keyConfigured: true,
+      };
+    }
+
+    if (!res.ok) {
+      return {
+        hits: [],
+        error:
+          data.error ||
+          `SerpAPI HTTP ${res.status}. Revisá que la API key nueva esté en Vercel y redeploy.`,
+        query: q,
+        keyConfigured: true,
+      };
+    }
+
+    if (data.error) {
+      return {
+        hits: [],
+        error: `SerpAPI: ${data.error}`,
+        query: q,
+        keyConfigured: true,
+      };
+    }
 
     const hits: QuoraHit[] = [];
     const seen = new Set<string>();
@@ -82,10 +131,23 @@ export async function searchQuoraQuestions(
       });
     }
 
-    return hits;
+    return {
+      hits,
+      error:
+        hits.length === 0
+          ? "SerpAPI OK pero Google no trajo resultados de Quora para esas keywords (probá keywords en inglés o más genéricas)."
+          : null,
+      query: q,
+      keyConfigured: true,
+    };
   } catch (error) {
     console.error("[quora] searchQuoraQuestions falló:", error);
-    return [];
+    return {
+      hits: [],
+      error: error instanceof Error ? error.message : String(error),
+      query: q,
+      keyConfigured: true,
+    };
   }
 }
 
