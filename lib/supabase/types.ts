@@ -33,6 +33,14 @@ export type UserSettings = {
   telegram_chat_id: string | null;
   telegram_bot_token: string | null;
   gemini_api_key: string | null;
+  /** Digits for wa.me (e.g. 5215512345678). */
+  whatsapp_number: string | null;
+  /** WhatsApp Business click-to-chat URL (preferred). */
+  whatsapp_url: string | null;
+  /** Public landing / sales page URL. */
+  website_url: string | null;
+  /** Optional brand name used in soft intros. */
+  business_name: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -61,7 +69,12 @@ export type DetectedLead = {
   subreddit: string;
   intent_score: number | null; // 1-10
   analysis_reasoning: string | null;
+  /** Public Quora/Reddit-safe reply. */
   suggested_reply: string | null;
+  /** Operator WhatsApp/DM follow-up with sales CTA. */
+  suggested_reply_wa: string | null;
+  /** When set in the future, snoozed out of Todos. */
+  follow_up_at: string | null;
   status: LeadStatus;
   created_at: string;
 };
@@ -109,9 +122,14 @@ export type Database = {
       };
       detected_leads: {
         Row: DetectedLead;
-        Insert: Omit<DetectedLead, "created_at" | "id"> & {
+        Insert: Omit<
+          DetectedLead,
+          "created_at" | "id" | "suggested_reply_wa" | "follow_up_at"
+        > & {
           id?: string;
           created_at?: string;
+          suggested_reply_wa?: string | null;
+          follow_up_at?: string | null;
         };
         Update: Partial<DetectedLead>;
         Relationships: [

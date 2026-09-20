@@ -10,6 +10,7 @@ export type ScanLeadPreview = {
   intent_score: number | null;
   status: string;
   suggested_reply: string | null;
+  suggested_reply_wa?: string | null;
 };
 
 export type PipelineSummaryLite = {

@@ -8,12 +8,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
 import { updateSettings, type SettingsActionResult } from "@/app/actions/settings";
+import { BRAND_DEFAULTS } from "@/lib/sales/brand";
 import type { UserSettings } from "@/lib/supabase/types";
 
 type SettingsFormProps = {
   settings: Pick<
     UserSettings,
-    "telegram_bot_token" | "telegram_chat_id" | "gemini_api_key" | "is_active"
+    | "telegram_bot_token"
+    | "telegram_chat_id"
+    | "gemini_api_key"
+    | "whatsapp_number"
+    | "whatsapp_url"
+    | "website_url"
+    | "business_name"
+    | "is_active"
   > | null;
 };
 
@@ -37,6 +45,75 @@ export function SettingsForm({ settings }: SettingsFormProps) {
 
   return (
     <form action={formAction} className="mt-6 space-y-6">
+      <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
+        <div>
+          <p className="text-sm font-medium text-foreground">Venta / CTA</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Las respuestas públicas van sin WhatsApp (anti-ban Quora). El follow-up
+            WA/web es solo para copiar vos al DM.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="business_name">Nombre del negocio (opcional)</Label>
+          <Input
+            id="business_name"
+            name="business_name"
+            type="text"
+            defaultValue={
+              settings?.business_name ?? BRAND_DEFAULTS.businessName
+            }
+            placeholder={BRAND_DEFAULTS.businessName}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="whatsapp_number">WhatsApp (con código de país)</Label>
+          <Input
+            id="whatsapp_number"
+            name="whatsapp_number"
+            type="tel"
+            inputMode="numeric"
+            defaultValue={
+              settings?.whatsapp_number ?? BRAND_DEFAULTS.whatsappNumber
+            }
+            placeholder={BRAND_DEFAULTS.whatsappNumber}
+          />
+          <p className="text-xs text-muted-foreground">
+            Solo números. México: 52 + 1 + 10 dígitos.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="whatsapp_url">Link WhatsApp Business</Label>
+          <Input
+            id="whatsapp_url"
+            name="whatsapp_url"
+            type="url"
+            defaultValue={
+              settings?.whatsapp_url ?? BRAND_DEFAULTS.whatsappUrl
+            }
+            placeholder={BRAND_DEFAULTS.whatsappUrl}
+          />
+          <p className="text-xs text-muted-foreground">
+            Preferido en las respuestas (click-to-chat).
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="website_url">Página web / landing</Label>
+          <Input
+            id="website_url"
+            name="website_url"
+            type="url"
+            defaultValue={
+              settings?.website_url ?? BRAND_DEFAULTS.websiteUrl
+            }
+            placeholder={BRAND_DEFAULTS.websiteUrl}
+          />
+        </div>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="telegram_bot_token">Telegram Bot Token</Label>
         <Input

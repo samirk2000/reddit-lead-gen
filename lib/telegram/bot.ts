@@ -1,26 +1,14 @@
 import type { DetectedLead } from "@/lib/supabase/types";
+import { detectLeadChannel, channelLabel } from "@/lib/leads/channel";
 
 /**
  * Telegram notification helpers.
- *
- * Sends structured lead alerts to a user's Telegram chat via the Bot API.
  */
 
-/** Telegram Bot API response for a successful `sendMessage` call. */
 type TelegramSendMessageOk = {
   ok: true;
 };
 
-/**
- * Sends a lead alert to the configured Telegram chat.
- *
- * @param botToken Telegram bot token (`{bot_id}:{auth_token}`).
- * @param chatId   Target chat id (user, group, or channel).
- * @param lead     The detected lead to report.
- * @param keyword  The keyword that triggered the lead.
- * @returns        Whether the message was accepted by the Bot API.
- * @throws         On network failure, non-OK response, or invalid payload.
- */
 export async function sendTelegramLeadNotification(
   botToken: string,
   chatId: string,
@@ -66,29 +54,31 @@ export async function sendTelegramLeadNotification(
   return true;
 }
 
-/**
- * Builds the HTML-formatted lead alert message.
- *
- * Only the 3 cosmetic emoji lines use `parse_mode`-safe markup; the rest are
- * single-line fields so Telegram's HTML parser won't choke on user content.
- */
 function buildLeadMessage(lead: DetectedLead, keyword: string): string {
+  const channel = detectLeadChannel(lead);
   const title = escapeHtml(lead.title);
   const reasoning = escapeHtml(lead.analysis_reasoning ?? "Sin análisis.");
-  const reply = escapeHtml(lead.suggested_reply ?? "Sin sugerencia.");
+  const replyPublic = escapeHtml(lead.suggested_reply ?? "Sin sugerencia.");
+  const replyWa = escapeHtml(lead.suggested_reply_wa ?? "—");
   const score = lead.intent_score ?? 0;
+  const source =
+    channel === "quora"
+      ? "Quora"
+      : `r/${escapeHtml(lead.subreddit)}`;
+  const viewLabel =
+    channel === "quora" ? "Ver en Quora" : "Ver en Reddit";
 
   return [
-    `🎯 <b>New Lead Detected!</b> (Score: ${score}/10)`,
-    `📌 <b>Subreddit:</b> r/${escapeHtml(lead.subreddit)} | <b>Keyword:</b> ${escapeHtml(keyword)}`,
-    `📝 <b>Title:</b> ${title}`,
-    `💡 <b>AI Rationale:</b> ${reasoning}`,
-    `💬 <b>Suggested Reply:</b> ${reply}`,
-    `🔗 <a href="${escapeHtml(lead.post_url)}">View Post on Reddit</a>`,
+    `🎯 <b>Nuevo lead</b> (Score: ${score}/10) · ${channelLabel(channel)}`,
+    `📌 <b>Fuente:</b> ${source} | <b>Keyword:</b> ${escapeHtml(keyword)}`,
+    `📝 <b>Título:</b> ${title}`,
+    `💡 <b>Análisis:</b> ${reasoning}`,
+    `💬 <b>Respuesta pública:</b> ${replyPublic}`,
+    `📱 <b>Follow-up WA:</b> ${replyWa}`,
+    `🔗 <a href="${escapeHtml(lead.post_url)}">${viewLabel}</a>`,
   ].join("\n");
 }
 
-/** Escapes HTML special characters to keep Telegram's HTML parser safe. */
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")

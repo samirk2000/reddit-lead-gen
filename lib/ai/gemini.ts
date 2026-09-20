@@ -1,37 +1,40 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
+import {
+  ensureSalesCtaInReply,
+  formatCtaBlock,
+  normalizeWebsiteUrl,
+  resolveWhatsappHref,
+  type SalesCta,
+} from "@/lib/sales/cta";
+import type { LeadChannel } from "@/lib/leads/channel";
 
 /**
- * Structured output for a single analyzed Reddit post.
- *
- * Mirrors the shape enforced via `responseSchema` so the pipeline can parse
- * and persist results into `detected_leads`.
+ * Structured output for a single analyzed Reddit/Quora post.
  */
 export type RedditPostAnalysis = {
-  /**
-   * Purchase intent / pain-point alignment with the keyword. 1 (low) to 10
-   * (high). A score below 6 signals the thread is not worth engaging.
-   */
   intent_score: number;
-  /** Concise (2-sentence) rationale for the assigned score. */
   analysis_reasoning: string;
-  /** Peer-style, value-first reply to post on Reddit. */
+  /** Public Quora/Reddit-safe reply (no WhatsApp links). */
   suggested_reply: string;
+  /** Private operator follow-up with WhatsApp/web CTA. */
+  suggested_reply_wa: string;
 };
 
-/**
- * Response schema enforced by Gemini so the model must return valid JSON that
- * matches `RedditPostAnalysis`. Uses integer bounds on `intent_score` and
- * strict required fields.
- */
+export type AnalyzePostOptions = {
+  userApiKey?: string | undefined;
+  salesCta?: SalesCta | undefined;
+  channel?: LeadChannel | undefined;
+};
+
 export const REDDIT_ANALYSIS_SCHEMA: Schema = {
   type: Type.OBJECT,
   description:
-    "Análisis estructurado de un post de Reddit frente a una keyword objetivo.",
+    "Análisis estructurado de un post frente a una keyword objetivo.",
   properties: {
     intent_score: {
       type: Type.INTEGER,
       description:
-        "Puntuación de intención de compra / dolor inminente de 1 a 10 (10 = máxima alineación con la keyword).",
+        "Puntuación de intención de compra / dolor inminente de 1 a 10.",
       minimum: 1,
       maximum: 10,
     },
@@ -43,49 +46,43 @@ export const REDDIT_ANALYSIS_SCHEMA: Schema = {
     suggested_reply: {
       type: Type.STRING,
       description:
-        "Respuesta persuasiva, natural y sin tono de venta para publicar como un par con alto valor, sin parecer bot ni spam promocional.",
+        "Respuesta PÚBLICA segura: útil, natural, sin links de WhatsApp ni web de venta.",
+    },
+    suggested_reply_wa: {
+      type: Type.STRING,
+      description:
+        "Follow-up PRIVADO para el operador con WhatsApp y/o web oficiales.",
     },
   },
-  required: ["intent_score", "analysis_reasoning", "suggested_reply"],
+  required: [
+    "intent_score",
+    "analysis_reasoning",
+    "suggested_reply",
+    "suggested_reply_wa",
+  ],
 };
 
-/**
- * Gemini model used for structured post analysis.
- *
- * `gemini-2.5-flash` returned a 404 (model not available on the active account/
- * plan), so we use the newest flash model present in the installed `@google/genai`
- * SDK typings (`gemini-3.6-flash`). Verify against your Billing/quota if it 404s.
- */
 export const GEMINI_MODEL = "gemini-3.6-flash";
 
-/**
- * Analyzes a Reddit post against a target keyword using `GEMINI_MODEL`.
- *
- * API key resolution order:
- *   1. `userApiKey` (per-user key stored in `user_settings.gemini_api_key`)
- *   2. `process.env.GEMINI_API_KEY` (shared/server key)
- *
- * Failures are logged clearly to the console, then re-thrown so the pipeline
- * caller can decide whether a single post error should abort the subreddit.
- *
- * @param postTitle    Reddit post title.
- * @param postContent  Reddit post body (may be empty).
- * @param keyword      The user's target keyword/phrase to match against.
- * @param userApiKey   Optional per-user API key override.
- * @returns            Parsed structured analysis.
- * @throws             When no API key is configured, when the model is
- *                     rate-limited after retries, when the response cannot be
- *                     parsed, or when Gemini itself errors (e.g. model 404).
- */
 export async function analyzeRedditPost(
   postTitle: string,
   postContent: string,
   keyword: string,
-  userApiKey?: string,
+  options?: string | AnalyzePostOptions,
 ): Promise<RedditPostAnalysis> {
-  const apiKey = resolveApiKey(userApiKey);
+  const opts: AnalyzePostOptions =
+    typeof options === "string" ? { userApiKey: options } : options ?? {};
+  const apiKey = resolveApiKey(opts.userApiKey);
+  const salesCta = opts.salesCta ?? {};
+  const channel: LeadChannel = opts.channel ?? "reddit";
 
-  const prompt = buildAnalysisPrompt(postTitle, postContent, keyword);
+  const prompt = buildAnalysisPrompt(
+    postTitle,
+    postContent,
+    keyword,
+    salesCta,
+    channel,
+  );
 
   const genAI = new GoogleGenAI({ apiKey });
 
@@ -115,18 +112,16 @@ export async function analyzeRedditPost(
         );
       }
 
-      return parseAndValidate(text);
+      const parsed = parseAndValidate(text);
+      return finalizeReplies(parsed, salesCta, channel);
     } catch (error) {
       const status = getRateLimitStatus(error);
       if (status !== undefined) {
         lastError = error;
         if (attempt < maxRetries - 1) {
-          continue; // retry, the loop sleeps before the next attempt
+          continue;
         }
       }
-      // Log clearly before throwing so the failure is visible even if the
-      // pipeline later swallows it (per-post). Include model + keyword/title
-      // for fast diagnosis without dumping the whole stack.
       const wrapped = wrapError(error, { postTitle, keyword });
       console.error(
         `[gemini] Error al analizar post con "${keyword}": ${wrapped.message}`,
@@ -135,15 +130,55 @@ export async function analyzeRedditPost(
     }
   }
 
-  // Unreachable when a non-rate-limit error throws above; reachable only if
-  // every attempt was rate-limited and retries were exhausted.
   throw new Error(
     `Gemini rate limit superado tras ${maxRetries} intentos.`,
     { cause: lastError },
   );
 }
 
-/** Resolves the API key, preferring the per-user key. Throws if none exist. */
+function finalizeReplies(
+  parsed: RedditPostAnalysis,
+  salesCta: SalesCta,
+  channel: LeadChannel,
+): RedditPostAnalysis {
+  let publicReply = stripHardCtas(parsed.suggested_reply);
+  if (channel === "quora") {
+    publicReply = publicReply.trim();
+  }
+
+  const waReply = ensureSalesCtaInReply(
+    parsed.suggested_reply_wa || buildDefaultWaFollowUp(salesCta),
+    salesCta,
+  );
+
+  return {
+    ...parsed,
+    suggested_reply: publicReply,
+    suggested_reply_wa: waReply,
+  };
+}
+
+function stripHardCtas(reply: string): string {
+  return reply
+    .replace(/https?:\/\/(?:api\.)?whatsapp\.com\/\S+/gi, "")
+    .replace(/https?:\/\/wa\.me\/\S+/gi, "")
+    .replace(/WhatsApp:\s*\S+/gi, "")
+    .replace(/Web:\s*https?:\/\/\S+/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function buildDefaultWaFollowUp(cta: SalesCta): string {
+  const brand = cta.businessName?.trim() || "nosotros";
+  const block = formatCtaBlock(cta);
+  return [
+    `Hola! Te escribo de ${brand}. Si querés te paso una prueba para Fire Stick / Android TV y te ayudo con la config.`,
+    block ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function resolveApiKey(userApiKey?: string): string {
   const apiKey = userApiKey?.trim() || process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
@@ -155,35 +190,46 @@ function resolveApiKey(userApiKey?: string): string {
   return apiKey;
 }
 
-/** Builds the system + user prompt for analysis. */
 function buildAnalysisPrompt(
   postTitle: string,
   postContent: string,
   keyword: string,
+  salesCta: SalesCta,
+  channel: LeadChannel,
 ): string {
+  const ctaLines = buildCtaPromptLines(salesCta);
+  const channelRules =
+    channel === "quora"
+      ? [
+          "CANAL: Quora (alto riesgo de ban / borrado).",
+          "suggested_reply (PÚBLICA):",
+          "- 100% útil: tips de estabilidad, peaking, prueba, soporte, Fire Stick.",
+          "- PROHIBIDO: WhatsApp, wa.me, api.whatsapp.com, URL de venta, 'prueba gratis'.",
+          "- Preferí CERO CTA de venta. Soft DM máximo: 'si querés te oriento por DM'.",
+          "- Nunca digas que sos el mejor proveedor ni pegues marca/web.",
+          "suggested_reply_wa (PRIVADA, solo operador):",
+          "- Mensaje corto para DM o WhatsApp, CON links exactos de abajo.",
+        ]
+      : [
+          "CANAL: Reddit.",
+          "suggested_reply (PÚBLICA):",
+          "- Útil y natural. Soft CTA a DM OK. Sin WhatsApp ni links de venta.",
+          "suggested_reply_wa (PRIVADA):",
+          "- Follow-up con WhatsApp/web exactos para cuando te escriban.",
+        ];
+
   return [
     "Actúa como un experto en generación de leads IPTV para audiencia",
     "LATINOAMERICANA (español). Analiza el post frente a la keyword objetivo.",
     "",
-    "PRIORIDAD: posts en español o de usuarios LATAM buscando IPTV / Fire Stick",
-    "/ reproductores. Posts 100% en inglés de mercado US/EU → intent_score bajo",
-    "(≤4) salvo que pidan proveedor explícitamente y puedas atender en español.",
+    "PRIORIDAD: posts en español o LATAM buscando IPTV / Fire Stick.",
+    "Posts 100% EN de US/EU → intent_score ≤4 salvo pedido explícito.",
     "",
-    "INTENCIÓN ALTA (intent_score 8-10):",
-    "- Busca IPTV, proveedor, lista M3U, Xtream, prueba, o setup en Fire Stick",
-    "  / Android TV, idealmente en español.",
-    "- Frustración con proveedor actual o pide recomendaciones claras.",
+    "INTENCIÓN ALTA (8-10): IPTV, proveedor, M3U, Xtream, prueba, Fire Stick.",
+    "INTENCIÓN BAJA (<6): memes, noticias, leads gringos sin compra.",
     "",
-    "INTENCIÓN BAJA (intent_score menor a 6):",
-    "- Soporte técnico sin intención de comprar, memes, noticias, o leads",
-    "  claramente gringos que no hablan español.",
-    "",
-    "ESTRATEGIA DE RESPUESTA (suggested_reply) — SIEMPRE EN ESPAÑOL LATINO:",
-    "- Útil, natural, sin spam ni links.",
-    "- Invitar a DM para prueba / ayuda de config.",
-    "- Corto y amigable. Ej: 'Te puedo pasar una prueba por DM si querés",
-    "  chequear estabilidad' o 'Si seguís armando el Fire Stick, te oriento",
-    "  por mensaje'.",
+    ...channelRules,
+    ...ctaLines,
     "",
     `KEYWORD OBJETIVO: ${keyword}`,
     "",
@@ -193,10 +239,24 @@ function buildAnalysisPrompt(
   ].join("\n");
 }
 
-/**
- * Parses the JSON returned by Gemini and validates it against
- * `RedditPostAnalysis`. Fails loudly if the shape is off so the caller knows.
- */
+function buildCtaPromptLines(salesCta: SalesCta): string[] {
+  const waHref = resolveWhatsappHref(salesCta);
+  const site = normalizeWebsiteUrl(salesCta.websiteUrl);
+  const brand = salesCta.businessName?.trim() || null;
+
+  const lines = [
+    "",
+    "CONTACTO (SOLO para suggested_reply_wa — no para suggested_reply pública):",
+  ];
+  if (brand) lines.push(`- Marca: ${brand}`);
+  if (waHref) lines.push(`- WhatsApp exacto: ${waHref}`);
+  if (site) lines.push(`- Web exacta: ${site}`);
+  if (!waHref && !site) {
+    lines.push("- (sin contacto configurado — no inventes links)");
+  }
+  return lines;
+}
+
 function parseAndValidate(json: string): RedditPostAnalysis {
   let parsed: unknown;
   try {
@@ -219,18 +279,19 @@ function parseAndValidate(json: string): RedditPostAnalysis {
     );
   }
 
+  const wa =
+    typeof parsed.suggested_reply_wa === "string"
+      ? parsed.suggested_reply_wa
+      : "";
+
   return {
     intent_score: parsed.intent_score,
     analysis_reasoning: parsed.analysis_reasoning,
     suggested_reply: parsed.suggested_reply,
+    suggested_reply_wa: wa,
   };
 }
 
-/**
- * Detects a Gemini rate-limit (429) from an error object without importing
- * the SDK's error class. Returns a numeric status when the error carries one,
- * otherwise `undefined`.
- */
 function getRateLimitStatus(error: unknown): number | undefined {
   if (error && typeof error === "object" && "status" in error) {
     const status = (error as { status?: unknown }).status;
@@ -239,9 +300,13 @@ function getRateLimitStatus(error: unknown): number | undefined {
   return undefined;
 }
 
-function wrapError(error: unknown, ctx: { postTitle: string; keyword: string }): Error {
+function wrapError(
+  error: unknown,
+  ctx: { postTitle: string; keyword: string },
+): Error {
   if (error instanceof Error) {
-    error.message = `[gemini:analyzeRedditPost] keyword="${ctx.keyword}" ` +
+    error.message =
+      `[gemini:analyzeRedditPost] keyword="${ctx.keyword}" ` +
       `post="${ctx.postTitle.slice(0, 60) || "(vacío)"}" — ${error.message}`;
     return error;
   }

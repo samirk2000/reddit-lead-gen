@@ -15,7 +15,9 @@ export default async function SettingsPage() {
 
   const { data } = await supabase
     .from("user_settings")
-    .select("telegram_bot_token, telegram_chat_id, gemini_api_key, is_active")
+    .select(
+      "telegram_bot_token, telegram_chat_id, gemini_api_key, whatsapp_number, whatsapp_url, website_url, business_name, is_active",
+    )
     .eq("id", userId)
     .maybeSingle();
 
@@ -27,7 +29,7 @@ export default async function SettingsPage() {
         Configuración
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Conecta tus cuentas de Telegram y Gemini, y controla el escaneo
+        WhatsApp / web para las respuestas, Telegram, Gemini y escaneo
         automático.
       </p>
 

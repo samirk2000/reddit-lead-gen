@@ -18,6 +18,8 @@ import {
 import { sendTelegramLeadNotification } from "@/lib/telegram/bot";
 import { analyzeRedditPost } from "@/lib/ai/gemini";
 import { searchQuoraQuestions } from "@/lib/quora/search";
+import { resolveSalesCta } from "@/lib/sales/brand";
+import { detectLeadChannel } from "@/lib/leads/channel";
 
 export type { ScanEvent, ScanLeadPreview, ScanMode } from "@/lib/pipeline/scan-types";
 
@@ -223,6 +225,7 @@ async function* scanReddit(
             intent_score: lead.intent_score,
             status: lead.status,
             suggested_reply: lead.suggested_reply,
+            suggested_reply_wa: lead.suggested_reply_wa,
           },
         };
       }
@@ -354,6 +357,7 @@ async function* scanQuora(
           intent_score: lead.intent_score,
           status: lead.status,
           suggested_reply: lead.suggested_reply,
+          suggested_reply_wa: lead.suggested_reply_wa,
         },
       };
     }
@@ -381,7 +385,16 @@ async function analyzeAndStore(
       item.title,
       item.content ?? "",
       keyword.phrase,
-      settings.gemini_api_key ?? undefined,
+      {
+        userApiKey: settings.gemini_api_key ?? undefined,
+        channel: detectLeadChannel(item),
+        salesCta: resolveSalesCta({
+          whatsappNumber: settings.whatsapp_number,
+          whatsappUrl: settings.whatsapp_url,
+          websiteUrl: settings.website_url,
+          businessName: settings.business_name,
+        }),
+      },
     );
   } catch (error) {
     console.error(
@@ -409,6 +422,7 @@ async function analyzeAndStore(
         intent_score: analysis.intent_score,
         analysis_reasoning: analysis.analysis_reasoning,
         suggested_reply: analysis.suggested_reply,
+        suggested_reply_wa: analysis.suggested_reply_wa,
         status: "rejected",
       })
       .select()
@@ -437,6 +451,7 @@ async function analyzeAndStore(
       intent_score: analysis.intent_score,
       analysis_reasoning: analysis.analysis_reasoning,
       suggested_reply: analysis.suggested_reply,
+      suggested_reply_wa: analysis.suggested_reply_wa,
       status,
     })
     .select()
@@ -531,7 +546,9 @@ async function loadUserSettings(
 ): Promise<Partial<UserSettings>> {
   const { data, error } = await supabase
     .from("user_settings")
-    .select("telegram_bot_token, telegram_chat_id, gemini_api_key, is_active")
+    .select(
+      "telegram_bot_token, telegram_chat_id, gemini_api_key, whatsapp_number, whatsapp_url, website_url, business_name, is_active",
+    )
     .eq("id", userId)
     .maybeSingle();
   if (error) {

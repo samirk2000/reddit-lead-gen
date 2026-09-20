@@ -12,6 +12,8 @@ import {
   type RedditPost,
 } from "@/lib/reddit/fetcher";
 import { sendTelegramLeadNotification } from "@/lib/telegram/bot";
+import { resolveSalesCta } from "@/lib/sales/brand";
+import { detectLeadChannel } from "@/lib/leads/channel";
 import {
   analyzeRedditPost,
   type RedditPostAnalysis,
@@ -211,7 +213,7 @@ async function loadUserSettings(
   const { data, error } = await supabase
     .from("user_settings")
     .select(
-      "telegram_bot_token, telegram_chat_id, gemini_api_key, is_active",
+      "telegram_bot_token, telegram_chat_id, gemini_api_key, whatsapp_number, whatsapp_url, website_url, business_name, is_active",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -338,7 +340,16 @@ async function processMatchedItem(
       item.title,
       item.content ?? "",
       keyword.phrase,
-      apiKey,
+      {
+        userApiKey: apiKey,
+        channel: detectLeadChannel(item),
+        salesCta: resolveSalesCta({
+          whatsappNumber: settings.whatsapp_number,
+          whatsappUrl: settings.whatsapp_url,
+          websiteUrl: settings.website_url,
+          businessName: settings.business_name,
+        }),
+      },
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -351,6 +362,28 @@ async function processMatchedItem(
   console.log(
     `[AI] ${kind === "comment" ? "Comentario" : "Post"} "${truncate(item.title)}" match "${keyword.phrase}" -> Score: ${analysis.intent_score}/10`,
   );
+
+  // Align with progressive: junk scores are persisted as rejected.
+  if (analysis.intent_score <= 3) {
+    summary.skippedFilter++;
+    await saveLead(supabase, {
+      user_id: userId,
+      keyword_id: keyword.id,
+      reddit_post_id: item.reddit_post_id,
+      title: item.title,
+      content: item.content,
+      author: item.author,
+      post_url: item.post_url,
+      subreddit: item.subreddit,
+      intent_score: analysis.intent_score,
+      analysis_reasoning: analysis.analysis_reasoning,
+      suggested_reply: analysis.suggested_reply,
+      suggested_reply_wa: analysis.suggested_reply_wa,
+      status: "rejected",
+    });
+    existingPostIds.add(item.reddit_post_id);
+    return;
+  }
 
   const status =
     analysis.intent_score >= ALERT_INTENT_SCORE ? "notified" : "archived";
@@ -367,6 +400,7 @@ async function processMatchedItem(
     intent_score: analysis.intent_score,
     analysis_reasoning: analysis.analysis_reasoning,
     suggested_reply: analysis.suggested_reply,
+    suggested_reply_wa: analysis.suggested_reply_wa,
     status,
   });
 

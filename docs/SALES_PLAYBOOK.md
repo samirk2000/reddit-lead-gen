@@ -41,12 +41,17 @@ curl "https://TU-DOMINIO.vercel.app/api/cron?token=TU_CRON_SECRET"
 
 ## 1. Reddit (bot + respuesta humana)
 
+### Dashboard (copies duales)
+- **Copiar pública** → pegar en el hilo (sin WhatsApp/links de venta)
+- **Copiar WA** → pegar solo en DM / WhatsApp cuando te escriban
+- **Regenerar** si el tono no cierra; **Follow-up mañana** saca el lead de Todos
+
 ### Rutina diaria (30–45 min)
 | Momento | Acción |
 |---|---|
 | Mañana | Revisar Telegram (score ≥ 7) |
 | Mediodía | Responder leads pendientes (<15 min ideal) |
-| Noche | Marcar Respondido / Archivado + anotar en el sheet |
+| Noche | Marcar Respondido / Archivado (+ Reabrir si hace falta) |
 
 ### Tono de reply (copiar/adaptar)
 - Útil primero, venta después
@@ -67,6 +72,9 @@ Plantilla B (recomendación IPTV/player):
 ---
 
 ## 2. Quora (manual, 30–45 min/día)
+
+**Importante:** Quora borra rápido respuestas con “mandame DM / prueba gratis”.  
+Usá **Copiar pública** (valor, cero WA). El CTA de venta va en **Copiar WA** después del DM inbound.
 
 ### Búsquedas (pegá en Quora Search)
 - Best IPTV for Fire Stick

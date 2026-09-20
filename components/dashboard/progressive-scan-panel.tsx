@@ -239,7 +239,12 @@ export function ProgressiveScanPanel() {
                 >
                   {lead.title}
                 </a>
-                <Badge variant="muted">r/{lead.subreddit}</Badge>
+                <Badge variant="muted">
+                  {lead.subreddit?.toLowerCase().includes("quora") ||
+                  lead.post_url?.toLowerCase().includes("quora.com")
+                    ? "Quora"
+                    : `r/${lead.subreddit}`}
+                </Badge>
                 {lead.intent_score != null && (
                   <Badge
                     variant={lead.intent_score >= 7 ? "success" : "muted"}

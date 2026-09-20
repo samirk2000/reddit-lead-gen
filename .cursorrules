@@ -3,7 +3,7 @@
 ## Stack Architecture
 - Framework: Next.js 14+ (App Router, React Server Components, Server Actions).
 - DB & Auth: Supabase (PostgreSQL, Row Level Security, Supabase SSR Auth).
-- AI Engine: `@google/genai` (Gemini SDK) usando exclusivamente el modelo `gemini-2.5-flash`.
+- AI Engine: `@google/genai` (Gemini SDK) usando exclusivamente el modelo `gemini-3.6-flash`.
 - Styling: TailwindCSS + Shadcn/ui.
 - Typescript: Strictest mode. Manual types derived from Supabase DB schema.
 

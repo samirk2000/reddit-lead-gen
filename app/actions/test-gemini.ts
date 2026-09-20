@@ -41,6 +41,7 @@ export async function testGemini(
       intent_score: analysis.intent_score,
       analysis_reasoning: analysis.analysis_reasoning,
       suggested_reply: analysis.suggested_reply,
+      suggested_reply_wa: analysis.suggested_reply_wa,
     });
 
     return { ok: true, data: analysis, error: null };

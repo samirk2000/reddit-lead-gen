@@ -161,6 +161,8 @@ function buildResearchPrompt(niche: string, sampleTitles: string[]): string {
     "REGLAS:",
     "- Frases en español latino, 2 a 5 palabras. Evita genéricos de 1 palabra.",
     "- Incluye variantes regionales (mexico/méxico, barato, estable, prueba).",
+    "- Incluye frases estilo pregunta Quora ES: 'mejor iptv', 'iptv estable',",
+    "  'proveedor iptv latam', 'fire stick iptv', 'iptv sin cortes'.",
     "- Mezcla: comprar, configurar, comparar proveedores, dolor de buffering.",
     "- suggested_subreddit: uno de firetvstick, smartersiptv, TiviMate,",
     "  AndroidTV, cordcutters, Stremio, sideloaded, iptv, o `all`.",
@@ -170,7 +172,7 @@ function buildResearchPrompt(niche: string, sampleTitles: string[]): string {
     "",
     `NICHO: ${niche}`,
     "",
-    "TÍTULOS REALES RECIENTES DE REDDIT (usa el lenguaje que ves aquí):",
+    "TÍTULOS REALES RECIENTES (Reddit; usá el lenguaje; pensá también Quora ES):",
     samples,
   ].join("\n");
 }
