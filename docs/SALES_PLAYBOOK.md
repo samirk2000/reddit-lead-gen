@@ -28,6 +28,15 @@ curl "https://TU-DOMINIO.vercel.app/api/cron?token=TU_CRON_SECRET"
 | Reddit **comentarios** | ✅ | ScraperAPI (+1 request/sub) |
 | Quora | ✅ (Google `site:quora.com`) | **SERPAPI_KEY** |
 | YouTube comments | Manual por ahora | — |
+
+### APIs
+| Variable | Para qué |
+|---|---|
+| `GEMINI_API_KEY` | Scoring + research |
+| `SERPAPI_KEY` | Quora (Google) + Trends en Keyword Research |
+| `SCRAPER_API_KEY` | Reddit posts + comentarios |
+| `CRON_SECRET` | Escaneo automático |
+
 ---
 
 ## 1. Reddit (bot + respuesta humana)
