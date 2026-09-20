@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUserId } from "@/lib/supabase/session";
 import { MetricCards } from "@/components/dashboard/metric-cards";
 import { LeadList, type LeadView } from "@/components/dashboard/lead-list";
-import { RunScanButton } from "@/components/dashboard/run-scan-button";
+import { ProgressiveScanPanel } from "@/components/dashboard/progressive-scan-panel";
 
 export const metadata: Metadata = {
   title: "Leads",
@@ -51,16 +51,18 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Leads
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Oportunidades detectadas por la automatización de Reddit.
-          </p>
-        </div>
-        <RunScanButton />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          Leads
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Escaneá Reddit o Quora por separado. Lo ya visto se salta para no
+          quemar créditos.
+        </p>
+      </div>
+
+      <div className="mt-6">
+        <ProgressiveScanPanel />
       </div>
 
       <div className="mt-6">

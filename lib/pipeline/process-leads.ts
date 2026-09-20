@@ -16,7 +16,6 @@ import {
   analyzeRedditPost,
   type RedditPostAnalysis,
 } from "@/lib/ai/gemini";
-import { searchQuoraQuestions } from "@/lib/quora/search";
 
 /** Threshold above which a lead is worth alerting the user about. */
 const ALERT_INTENT_SCORE = 7;
@@ -32,7 +31,9 @@ const ALERT_INTENT_SCORE = 7;
  *      and would waste a ScraperAPI credit.
  *   4. For each subreddit: fetch posts RSS + recent comments listing once,
  *      keyword-filter locally and run Gemini on matching items.
- *   5. Optionally search Quora (SerpAPI Google site:quora.com) for LATAM phrases.
+ *
+ * Quora is intentionally NOT included here — use the dashboard "Escanear Quora"
+ * progressive mode (or /api/scan?mode=quora) so SerpAPI spend stays opt-in.
  *
  * @param userId The authenticated user's UUID.
  * @returns      A summary of posts fetched, stored, alerted, and skipped.
@@ -96,21 +97,6 @@ export async function runLeadGenerationPipelineForUser(
         result.reason,
       );
     }
-  }
-
-  // Quora pass (optional): uses SERPAPI_KEY via Google site:quora.com.
-  // Isolated so a Quora/SerpAPI failure never aborts the Reddit results.
-  try {
-    await processQuoraLeads(
-      supabase,
-      userId,
-      keywords,
-      settings,
-      existingPostIds,
-      summary,
-    );
-  } catch (error) {
-    console.error(`[pipeline] Quora pass falló para ${userId}:`, error);
   }
 
   return summary;
@@ -394,82 +380,8 @@ async function processMatchedItem(
 }
 
 /**
- * Searches Quora (via SerpAPI Google) for the user's top Spanish keywords and
- * scores hits with Gemini. Skips entirely when SERPAPI_KEY is missing.
+ * Persists a new lead row and returns the stored record.
  */
-async function processQuoraLeads(
-  supabase: SupabaseServiceClient,
-  userId: string,
-  keywords: Pick<Keyword, "id" | "phrase" | "subreddit">[],
-  settings: Partial<UserSettings>,
-  existingPostIds: Set<string>,
-  summary: PipelineSummary,
-): Promise<void> {
-  if (!process.env.SERPAPI_KEY?.trim()) {
-    console.log(
-      "[pipeline] Quora omitido: falta SERPAPI_KEY (Google site:quora.com).",
-    );
-    return;
-  }
-
-  // Cap SerpAPI spend: take up to 3 distinct phrases per scan.
-  const phrases = [
-    ...new Set(keywords.map((k) => k.phrase.trim()).filter(Boolean)),
-  ].slice(0, 3);
-  if (phrases.length === 0) return;
-
-  const hits = await searchQuoraQuestions(phrases);
-  summary.fetched += hits.length;
-  console.log(`[pipeline] Quora: ${hits.length} resultados para ${phrases.join(" | ")}`);
-
-  const keywordByPhrase = new Map(
-    keywords.map((k) => [k.phrase.toLowerCase(), k]),
-  );
-
-  for (const hit of hits) {
-    if (existingPostIds.has(hit.id)) {
-      summary.skippedDedupe++;
-      continue;
-    }
-
-    const matchedKeyword =
-      keywords.find((k) =>
-        matchesKeyword(
-          {
-            reddit_post_id: hit.id,
-            title: hit.title,
-            content: hit.snippet,
-            author: null,
-            post_url: hit.url,
-            subreddit: "quora",
-          },
-          k.phrase,
-        ),
-      ) ?? keywordByPhrase.get(phrases[0]!.toLowerCase()) ?? keywords[0];
-
-    if (!matchedKeyword) continue;
-
-    await processMatchedItem(
-      supabase,
-      userId,
-      {
-        reddit_post_id: hit.id,
-        title: `[Quora] ${hit.title}`,
-        content: hit.snippet,
-        author: null,
-        post_url: hit.url,
-        subreddit: "quora",
-      },
-      "post",
-      matchedKeyword,
-      settings,
-      existingPostIds,
-      summary,
-    );
-  }
-}
-
-/** Persists a new lead row and returns the stored record. */
 async function saveLead(
   supabase: SupabaseServiceClient,
   insert: Database["public"]["Tables"]["detected_leads"]["Insert"],

@@ -97,8 +97,8 @@ const REQUEST_GAP_MAX_MS = 2000;
 /** Max RSS items to keep per subreddit feed. */
 const DEFAULT_FEED_LIMIT = 25;
 
-/** TTL for the in-memory subreddit feed cache (5 minutes). */
-const CACHE_TTL_MS = 5 * 60 * 1000;
+/** TTL for the in-memory subreddit feed cache (30 minutes — save API credits). */
+const CACHE_TTL_MS = 30 * 60 * 1000;
 
 /**
  * In-memory cache of recently fetched subreddit feeds so we don't burn a
