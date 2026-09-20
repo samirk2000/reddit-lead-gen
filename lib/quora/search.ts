@@ -1,9 +1,8 @@
 /**
  * Quora lead discovery via SerpAPI Google (`site:quora.com`).
  *
- * Requires `SERPAPI_KEY` in the server env (Vercel). If credits stay at 0 after
- * a Quora scan, the key is missing/wrong in Vercel — updating only .env.local
- * does not affect production.
+ * Requires `SERPAPI_KEY` in the server env (Vercel). Results are filtered to
+ * IPTV / Fire Stick / player niche so random Quora junk never becomes a lead.
  */
 
 export type QuoraHit = {
@@ -23,6 +22,10 @@ export type QuoraSearchResult = {
   keyConfigured: boolean;
 };
 
+/** Must appear in title or snippet or we drop the hit as off-niche. */
+const NICHE_RE =
+  /\b(iptv|m3u|xtream|tivimate|smarters|fire\s*stick|firestick|android\s*tv|cord\s*cut|streaming|proveedor|lista\s*iptv|kodi)\b/i;
+
 /**
  * Searches Quora questions for the given phrases via Google.
  */
@@ -40,22 +43,27 @@ export async function searchQuoraQuestions(
     };
   }
 
-  const clean = phrases.map((p) => p.trim()).filter((p) => p.length >= 3);
-  if (clean.length === 0) {
-    return {
-      hits: [],
-      error: "No hay phrases válidas para buscar en Quora.",
-      query: "",
-      keyConfigured: true,
-    };
-  }
+  // Prefer phrases that already look niche; drop ultra-generic ones that
+  // pollute Google ("prueba gratis", "cuál", etc.).
+  const clean = phrases
+    .map((p) => p.trim())
+    .filter((p) => p.length >= 3)
+    .filter((p) => NICHE_RE.test(p) || /\biptv\b/i.test(p))
+    .slice(0, 3);
 
-  // Broader query: exact phrases OR loose keywords (quoted-only was too strict).
-  const quoted = clean
-    .slice(0, 3)
+  const fallbackPhrases = [
+    "busco iptv",
+    "mejor iptv",
+    "iptv fire stick",
+    "proveedor iptv",
+  ];
+  const effective = clean.length > 0 ? clean : fallbackPhrases;
+
+  const quoted = effective
     .map((p) => `"${p.replace(/"/g, "")}"`)
     .join(" OR ");
-  const q = `site:quora.com (${quoted}) OR (site:quora.com iptv (méxico OR mexico OR argentina OR "fire stick" OR proveedor))`;
+  // Tight query: every result must be on Quora AND niche-related.
+  const q = `site:quora.com iptv (${quoted})`;
 
   try {
     const params = new URLSearchParams({
@@ -74,7 +82,6 @@ export async function searchQuoraQuestions(
     const rawText = await res.text();
     let data: {
       error?: string;
-      search_metadata?: { status?: string };
       organic_results?: Array<{
         title?: string;
         link?: string;
@@ -114,6 +121,7 @@ export async function searchQuoraQuestions(
 
     const hits: QuoraHit[] = [];
     const seen = new Set<string>();
+    let droppedOffNiche = 0;
 
     for (const row of data.organic_results ?? []) {
       const url = row.link?.trim() ?? "";
@@ -123,10 +131,17 @@ export async function searchQuoraQuestions(
       const title = (row.title ?? "").trim();
       if (!title) continue;
 
+      const snippet = (row.snippet ?? "").trim();
+      const haystack = `${title}\n${snippet}`;
+      if (!NICHE_RE.test(haystack)) {
+        droppedOffNiche++;
+        continue;
+      }
+
       hits.push({
         id: `quora_${hashUrl(url)}`,
         title: title.replace(/\s*[-|].*Quora.*$/i, "").trim() || title,
-        snippet: (row.snippet ?? "").trim(),
+        snippet,
         url,
       });
     }
@@ -135,7 +150,9 @@ export async function searchQuoraQuestions(
       hits,
       error:
         hits.length === 0
-          ? "SerpAPI OK pero Google no trajo resultados de Quora para esas keywords (probá keywords en inglés o más genéricas)."
+          ? droppedOffNiche > 0
+            ? `SerpAPI trajo ${droppedOffNiche} resultados de Quora fuera de nicho (filtrados). Probá keywords con “iptv”.`
+            : "SerpAPI OK pero sin resultados Quora de IPTV. Probá keywords más genéricas del nicho (busco iptv, iptv méxico)."
           : null,
       query: q,
       keyConfigured: true,

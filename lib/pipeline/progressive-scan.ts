@@ -391,6 +391,35 @@ async function analyzeAndStore(
     return null;
   }
 
+  // Junk / off-intent: persist as `rejected` so we don't re-spend Gemini, but
+  // it won't clutter Todos/Archivados opportunity views.
+  if (analysis.intent_score <= 3) {
+    summary.skippedFilter++;
+    const { data: rejected } = await supabase
+      .from("detected_leads")
+      .insert({
+        user_id: userId,
+        keyword_id: keyword.id,
+        reddit_post_id: item.reddit_post_id,
+        title: item.title,
+        content: item.content,
+        author: item.author,
+        post_url: item.post_url,
+        subreddit: item.subreddit,
+        intent_score: analysis.intent_score,
+        analysis_reasoning: analysis.analysis_reasoning,
+        suggested_reply: analysis.suggested_reply,
+        status: "rejected",
+      })
+      .select()
+      .single();
+    if (rejected) existingPostIds.add(item.reddit_post_id);
+    console.log(
+      `[progressive-scan] Rechazado score ${analysis.intent_score}/10: ${item.title.slice(0, 60)}`,
+    );
+    return null;
+  }
+
   const status =
     analysis.intent_score >= ALERT_INTENT_SCORE ? "notified" : "archived";
 
