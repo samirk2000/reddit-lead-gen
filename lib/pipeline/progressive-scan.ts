@@ -253,18 +253,18 @@ async function* scanQuora(
 
   const phrases = [
     ...new Set(keywords.map((k) => k.phrase.trim()).filter(Boolean)),
-  ].slice(0, 3);
+  ].slice(0, 10);
 
   yield {
     type: "progress",
     current: 0,
     total: 1,
-    label: "Quora via Google",
+    label: "Quora via Google (multi-query)",
     phase: "search",
   };
   yield {
     type: "status",
-    message: `Buscando en Quora: ${phrases.join(" · ")}`,
+    message: `Buscando Quora con ${phrases.length} keywords (varias páginas Google)…`,
   };
 
   if (signal?.aborted) return;
@@ -275,7 +275,7 @@ async function* scanQuora(
     yield {
       type: "status",
       message: result.keyConfigured
-        ? `Query: ${result.query.slice(0, 120)}…`
+        ? `Queries (${result.serpCalls} calls): ${result.query.slice(0, 140)}…`
         : "Configurá SERPAPI_KEY en Vercel → Settings → Environment Variables → Redeploy.",
     };
     return;
@@ -304,7 +304,7 @@ async function* scanQuora(
 
   yield {
     type: "status",
-    message: `Quora: ${hits.length} resultados · ${fresh.length} nuevos · ${hits.length - fresh.length} ya vistos`,
+    message: `Quora: ${hits.length} únicos · ${fresh.length} nuevos · ${hits.length - fresh.length} ya vistos · ${result.serpCalls} SerpAPI calls`,
   };
 
   let idx = 0;
