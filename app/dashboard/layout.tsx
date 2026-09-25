@@ -17,7 +17,7 @@ export default async function DashboardLayout({
 
   return (
     <ToastProvider>
-      <div className="flex min-h-screen bg-muted">
+      <div className="flex min-h-screen flex-col bg-muted md:flex-row">
         <SideNav />
 
         <div className="flex min-w-0 flex-1 flex-col">
