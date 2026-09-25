@@ -56,6 +56,57 @@ export type Keyword = {
   created_at: string;
 };
 
+/** Pipeline status for a Google Maps prospect (`maps_leads`). */
+export type MapsLeadStatus =
+  | "nuevo"
+  | "contactado"
+  | "respondió"
+  | "cerrado"
+  | "descartado";
+
+/** Why a Google place was kept as a prospect. */
+export type MapsLeadReason = "sin_sitio" | "solo_red_social";
+
+/** A local business with no real website (`maps_leads`). */
+export type MapsLead = {
+  id: string;
+  user_id: string;
+  place_id: string;
+  name: string;
+  address: string | null;
+  phone_national: string | null;
+  phone_international: string | null;
+  whatsapp_e164: string | null;
+  rating: number | null;
+  user_rating_count: number | null;
+  website_uri: string | null;
+  google_maps_uri: string | null;
+  business_status: string | null;
+  specialty: string;
+  city: string;
+  lead_reason: MapsLeadReason;
+  priority_score: number;
+  status: MapsLeadStatus;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  last_seen_at: string;
+};
+
+/** Per-user WhatsApp template for maps prospects (`maps_settings`). */
+export type MapsSettings = {
+  user_id: string;
+  whatsapp_template: string;
+  updated_at: string;
+};
+
+/** One successful Places search, for the hourly cost cap (`maps_search_log`). */
+export type MapsSearchLog = {
+  id: string;
+  user_id: string;
+  created_at: string;
+};
+
 /** A detected Reddit lead associated with a matched keyword (`detected_leads`). */
 export type DetectedLead = {
   id: string; // UUID
@@ -145,6 +196,68 @@ export type Database = {
             columns: ["keyword_id"];
             isOneToOne: false;
             referencedRelation: "keywords";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      maps_leads: {
+        Row: MapsLead;
+        Insert: Omit<
+          MapsLead,
+          | "id"
+          | "created_at"
+          | "updated_at"
+          | "last_seen_at"
+          | "status"
+          | "notes"
+        > & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          last_seen_at?: string;
+          status?: MapsLeadStatus;
+          notes?: string;
+        };
+        Update: Partial<MapsLead>;
+        Relationships: [
+          {
+            foreignKeyName: "maps_leads_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      maps_settings: {
+        Row: MapsSettings;
+        Insert: Omit<MapsSettings, "updated_at"> & {
+          updated_at?: string;
+        };
+        Update: Partial<MapsSettings>;
+        Relationships: [
+          {
+            foreignKeyName: "maps_settings_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: true;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      maps_search_log: {
+        Row: MapsSearchLog;
+        Insert: Omit<MapsSearchLog, "id" | "created_at"> & {
+          id?: string;
+          created_at?: string;
+        };
+        Update: Partial<MapsSearchLog>;
+        Relationships: [
+          {
+            foreignKeyName: "maps_search_log_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
             referencedColumns: ["id"];
           },
         ];
