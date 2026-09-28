@@ -50,7 +50,7 @@ describe("default outreach message", () => {
         "",
         "Desde $8,000 MXN. ¿Le mando un ejemplo de cómo quedaría?",
         "",
-        "Aquí un ejemplo: https://torioweb.com/ejemplos/dentista?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA",
+        "Aquí un ejemplo: https://torioweb.com/ejemplos/dentista/?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA",
       ].join("\n"),
     );
   });
@@ -349,7 +349,7 @@ describe("opening and saved template", () => {
     assert.match(followUp, /alrededor de \$8,000 MXN/);
     assert.match(
       followUp,
-      /Aquí un ejemplo: https:\/\/torioweb\.com\/ejemplos\/dentista\?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA$/,
+      /Aquí un ejemplo: https:\/\/torioweb\.com\/ejemplos\/dentista\/\?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA$/,
     );
     const opening = buildOpeningMessage(dentist);
     assert.match(opening, /¿Le puedo mandar un ejemplo/);
@@ -361,7 +361,7 @@ describe("opening and saved template", () => {
     const text = buildFollowUpMessage(dentist, { template });
     assert.equal(
       text,
-      "Vea https://torioweb.com/ejemplos/dentista?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA cuando pueda.",
+      "Vea https://torioweb.com/ejemplos/dentista/?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA cuando pueda.",
     );
     assert.equal(text.split("ejemplos/dentista").length - 1, 1);
   });

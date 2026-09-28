@@ -22,7 +22,9 @@ export function isKnownDemoSlug(slug: string): boolean {
 export function externalDemoUrl(slug: string, businessName: string): string | null {
   const path = DEMO_PATH_BY_SLUG[slug];
   if (!path) return null;
-  const page = `${demosBaseUrl()}/${path}`;
+  const segment = path.replace(/^\/+|\/+$/g, "");
+  if (!segment) return null;
+  const page = `${demosBaseUrl()}/${segment}/`;
   const name = businessName.trim();
   if (!name) return page;
   return `${page}?nombre=${encodeURIComponent(name)}`;
