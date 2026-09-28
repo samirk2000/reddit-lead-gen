@@ -1,8 +1,11 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import { GEMINI_MODEL } from "@/lib/ai/gemini";
-import { renderLeadMessage, type MessageLead } from "@/lib/maps/message";
+import { renderLeadMessage } from "@/lib/maps/message";
+import {
+  buildPersonalizePrompt,
+  type PersonalizePromptInput,
+} from "@/lib/maps/personalize-prompt";
 import { MapsError } from "@/lib/maps/errors";
-import type { MapsLeadReason } from "@/lib/supabase/types";
 
 const PERSONALIZE_SCHEMA: Schema = {
   type: Type.OBJECT,
@@ -11,18 +14,13 @@ const PERSONALIZE_SCHEMA: Schema = {
     message: {
       type: Type.STRING,
       description:
-        "Texto en español de México, trato de usted, sin URLs, máximo 700 caracteres.",
+        "Texto en español de México, trato de usted, sin URLs y sin promesas de ranking. Máximo 1100 caracteres.",
     },
   },
   required: ["message"],
 };
 
-export type PersonalizeInput = MessageLead & {
-  address: string | null;
-  leadReason: MapsLeadReason;
-  template: string;
-  currentMessage: string;
-};
+export type PersonalizeInput = PersonalizePromptInput;
 
 export async function personalizeMapsMessage(
   input: PersonalizeInput,
@@ -37,7 +35,7 @@ export async function personalizeMapsMessage(
   }
 
   const genAI = new GoogleGenAI({ apiKey });
-  const prompt = buildPrompt(input);
+  const prompt = buildPersonalizePrompt(input);
   const initialDelayMs = 1500;
   const maxRetries = 3;
   let lastError: unknown;
@@ -98,39 +96,6 @@ export async function personalizeMapsMessage(
     "GEMINI_RATE_LIMIT",
     "Gemini está limitando las solicitudes. Espera un momento e intenta de nuevo.",
   );
-}
-
-function buildPrompt(input: PersonalizeInput): string {
-  const reason =
-    input.leadReason === "solo_red_social"
-      ? "El único sitio publicado es una red social o un link-in-bio, no una página propia."
-      : "No tiene sitio web publicado en Google.";
-  const rating =
-    input.rating == null ? "sin calificación" : input.rating.toFixed(1);
-  const reviews =
-    input.userRatingCount == null ? "sin reseñas" : String(input.userRatingCount);
-
-  return [
-    "Eres el redactor de Torio Web, un estudio de páginas web en México.",
-    "Escribe UN mensaje de WhatsApp para contactar a este negocio a mano.",
-    "Trato de usted, tono respetuoso y breve. Español de México.",
-    "No inventes datos, premios, ni que ya hablaste con ellos.",
-    "No incluyas URLs, wa.me, ni digas que el mensaje se envió solo.",
-    "Conserva la oferta y el precio si aparecen en la plantilla.",
-    "Si la plantilla usa {{nombre}}, {{especialidad}}, {{calificacion}}, {{reseñas}} o {{ciudad}}, puedes dejarlos o sustituirlos con los datos de abajo.",
-    "",
-    `PLANTILLA:\n${input.template.slice(0, 1500)}`,
-    "",
-    `BORRADOR ACTUAL:\n${input.currentMessage.slice(0, 1500)}`,
-    "",
-    `NEGOCIO: ${input.name}`,
-    `GIRO: ${input.specialty}`,
-    `CIUDAD: ${input.city}`,
-    `DIRECCIÓN: ${input.address?.slice(0, 300) || "(sin dirección)"}`,
-    `CALIFICACIÓN: ${rating}`,
-    `RESEÑAS: ${reviews}`,
-    `SITIO: ${reason}`,
-  ].join("\n");
 }
 
 function parseMessage(json: string): string {

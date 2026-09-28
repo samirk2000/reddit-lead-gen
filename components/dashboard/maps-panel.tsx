@@ -353,8 +353,11 @@ export function MapsPanel({
                 Mensaje de WhatsApp
               </h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Se arma uno por negocio. Puedes usar {TEMPLATE_TOKENS.join(", ")}.
-                El botón de WhatsApp solo abre el chat; no envía nada.
+                Se arma uno por negocio. Tokens: {TEMPLATE_TOKENS.join(", ")}.
+                El giro rellena clientes, búsqueda, acción, lugar y el ejemplo
+                de blog. {"{{reputacion}}"} resume estrellas y reseñas, y se
+                acorta si faltan. El botón de WhatsApp solo abre el chat; no
+                envía nada.
               </p>
             </div>
             <div className="space-y-2">
@@ -366,9 +369,9 @@ export function MapsPanel({
                   templateTouched.current = true;
                   setTemplate(event.target.value);
                 }}
-                rows={7}
+                rows={12}
                 maxLength={1500}
-                className="min-h-40"
+                className="min-h-64"
                 disabled={!schemaReady}
               />
             </div>
