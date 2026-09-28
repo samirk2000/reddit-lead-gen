@@ -14,7 +14,7 @@ const PERSONALIZE_SCHEMA: Schema = {
     message: {
       type: Type.STRING,
       description:
-        "Texto en español de México, trato de usted, sin URLs y sin promesas de ranking. Máximo 1100 caracteres.",
+        "Apertura corta en español de México, trato de usted, máximo 3 líneas y 420 caracteres, sin URLs y sin promesas de ranking.",
     },
   },
   required: ["message"],
@@ -60,7 +60,7 @@ export async function personalizeMapsMessage(
         throw new Error("Gemini devolvió una respuesta vacía.");
       }
       const message = parseMessage(text);
-      return renderLeadMessage(message, input).slice(0, 1200);
+      return renderLeadMessage(message, input).slice(0, 500);
     } catch (error) {
       if (error instanceof MapsError) throw error;
       if (getRateLimitStatus(error) === 429) {

@@ -1,6 +1,5 @@
-import { DEFAULT_OUTREACH_PRICE } from "@/lib/maps/constants";
 import type { MessageLead } from "@/lib/maps/message";
-import { applyCity, resolveSector } from "@/lib/maps/sectors";
+import { resolveSector } from "@/lib/maps/sectors";
 import type { MapsLeadReason } from "@/lib/supabase/types";
 
 export type PersonalizePromptInput = MessageLead & {
@@ -10,6 +9,7 @@ export type PersonalizePromptInput = MessageLead & {
   currentMessage: string;
 };
 
+/** Prompt for the short opening message. The follow-up keeps the long offer. */
 export function buildPersonalizePrompt(input: PersonalizePromptInput): string {
   const reason =
     input.leadReason === "solo_red_social"
@@ -23,27 +23,22 @@ export function buildPersonalizePrompt(input: PersonalizePromptInput): string {
     input.userRatingCount == null || !Number.isFinite(input.userRatingCount)
       ? "sin reseñas"
       : String(input.userRatingCount);
-  const blog = applyCity(resolveSector(input.specialty).ejemploBlog, input.city);
+  const sector = resolveSector(input.specialty);
 
   return [
     "Eres el redactor de Torio Web, un estudio de páginas web en México.",
-    "Escribe UN mensaje de WhatsApp para contactar a este negocio a mano.",
-    "Trato de usted, tono respetuoso y breve. Español de México.",
-    "No inventes datos, premios, ni que ya hablaste con ellos.",
-    "No incluyas URLs, wa.me, ni digas que el mensaje se envió solo.",
-    "Conserva la oferta y el precio si aparecen en la plantilla.",
-    `Si la plantilla no trae precio, usa ${DEFAULT_OUTREACH_PRICE}.`,
-    "Si la plantilla usa {{nombre}}, {{especialidad}}, {{calificacion}}, {{reseñas}} o {{ciudad}}, puedes dejarlos o sustituirlos con los datos de abajo.",
-    "Incluye estos puntos de la oferta, adaptados al giro:",
-    "- una página profesional que muestre servicios, fotos del lugar y del trabajo, y reseñas;",
-    "- un botón directo a WhatsApp para que le escriban;",
-    "- que la página se deja optimizada para que Google pueda encontrarla;",
-    `- la opción de escribir artículos de blog para búsquedas de la zona, por ejemplo: "${blog}".`,
-    "No prometas posiciones, primera página, rankings, más clientes ni resultados. Puedes decir que la página se optimiza para que Google pueda encontrarla y que un blog ayuda a aparecer en más búsquedas de la zona, pero no garantices que eso vaya a pasar.",
+    "Escribe UN mensaje corto de apertura de WhatsApp, el primer contacto.",
+    "Máximo 3 líneas y 420 caracteres.",
+    "Trato de usted. Español de México. Tono respetuoso y directo.",
+    "Menciona que viste el negocio en Google Maps.",
+    "Si hay calificación y reseñas, inclúyelas. Si faltan, no inventes números ni digas que la reputación es buena.",
+    `Di que notaste que no tiene página web y que la gente busca "${sector.busqueda}" en su ciudad antes de ${sector.accion}.`,
+    "Cierra preguntando si le puedes mandar un ejemplo de cómo se vería su página.",
+    "No incluyas precio, lista de servicios, artículos, URLs ni wa.me. Eso va en un segundo mensaje.",
+    "No prometas posiciones, primera página, rankings, más clientes ni resultados.",
+    "No inventes datos, premios, ni que ya hablaron.",
     "",
-    `PLANTILLA:\n${input.template.slice(0, 1500)}`,
-    "",
-    `BORRADOR ACTUAL:\n${input.currentMessage.slice(0, 1500)}`,
+    `BORRADOR:\n${input.currentMessage.slice(0, 800)}`,
     "",
     `NEGOCIO: ${input.name}`,
     `GIRO: ${input.specialty}`,

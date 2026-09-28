@@ -30,10 +30,16 @@ export const REASON_LABELS: Record<MapsLeadReason, string> = {
 export const DEFAULT_OUTREACH_PRICE = "Desde $8,000 MXN";
 
 /**
- * Default WhatsApp copy. Sector tokens (`{{clientes}}`, `{{busqueda}}`,
- * `{{ejemplo_blog}}`, …) are filled per lead. `{{reputacion}}` is the
- * stars/reviews clause, shortened when those numbers are missing.
- * A template already stored in `maps_settings` is left as the user saved it.
+ * Short first-contact message. Not stored: it is always rendered per giro.
+ * `{{apertura}}` is the stars/reviews clause, shortened when those numbers
+ * are missing.
+ */
+export const OPENING_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Vi {{nombre}} en Google Maps{{apertura}}Noté que no tiene página web y mucha gente busca "{{busqueda}} en {{ciudad}}" en Google antes de {{accion}}. ¿Le puedo mandar un ejemplo de cómo se vería la suya?`;
+
+/**
+ * Follow-up copy, saved in `maps_settings` when the operator customizes it.
+ * Sector tokens are filled per lead. `{{reputacion}}` is the stars/reviews
+ * clause. A demo link is appended in code when that giro has a `/demo` page.
  */
 export const DEFAULT_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Vi {{nombre}} en Google Maps{{reputacion}}Pero noté que no tiene sitio web, y muchos {{clientes}} buscan "{{busqueda}} en {{ciudad}}" en Google antes de {{accion}}.
 

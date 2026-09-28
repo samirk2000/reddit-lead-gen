@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { MapsPanel } from "@/components/dashboard/maps-panel";
+import { resolvePublicAppUrl } from "@/lib/demo/url";
 import {
   DEFAULT_WHATSAPP_TEMPLATE,
   MISSING_PLACES_KEY_MESSAGE,
@@ -97,6 +98,7 @@ export default async function MapsLeadsPage() {
         initialTemplate={template}
         placesReady={placesReady}
         schemaReady={loadError === null}
+        publicUrl={resolvePublicAppUrl(headers())}
       />
     </div>
   );

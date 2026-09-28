@@ -19,12 +19,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import {
   DEFAULT_WHATSAPP_TEMPLATE,
+  OPENING_WHATSAPP_TEMPLATE,
   REASON_LABELS,
   SPECIALTY_PRESETS,
   STATUS_LABELS,
   TEMPLATE_TOKENS,
 } from "@/lib/maps/constants";
-import { renderLeadMessage, whatsAppHref } from "@/lib/maps/message";
+import {
+  buildFollowUpMessage,
+  buildOpeningMessage,
+  whatsAppHref,
+} from "@/lib/maps/message";
 import { MAPS_LEAD_STATUSES, isMapsLeadStatus } from "@/lib/maps/types";
 import type { MapsSearchSummary } from "@/lib/maps/types";
 import { cn } from "@/lib/utils";
@@ -35,6 +40,7 @@ type MapsPanelProps = {
   initialTemplate: string;
   placesReady: boolean;
   schemaReady: boolean;
+  publicUrl: string;
 };
 
 function sortLeads(leads: MapsLead[]): MapsLead[] {
@@ -60,6 +66,7 @@ export function MapsPanel({
   initialTemplate,
   placesReady,
   schemaReady,
+  publicUrl,
 }: MapsPanelProps) {
   const { toast } = useToast();
   const [leads, setLeads] = React.useState(initialLeads);
@@ -337,6 +344,7 @@ export function MapsPanel({
                 <LeadCard
                   lead={lead}
                   template={template}
+                  publicUrl={publicUrl}
                   onUpdated={replaceLead}
                 />
               </li>
@@ -350,14 +358,15 @@ export function MapsPanel({
           <form onSubmit={onSaveTemplate} className="space-y-4">
             <div>
               <h2 className="text-lg font-semibold text-foreground">
-                Mensaje de WhatsApp
+                Mensaje de seguimiento
               </h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Se arma uno por negocio. Tokens: {TEMPLATE_TOKENS.join(", ")}.
-                El giro rellena clientes, búsqueda, acción, lugar y el ejemplo
-                de blog. {"{{reputacion}}"} resume estrellas y reseñas, y se
-                acorta si faltan. El botón de WhatsApp solo abre el chat; no
-                envía nada.
+                Esta plantilla es la que se guarda. El mensaje de apertura es
+                corto, cambia según el giro y no se edita aquí. Tokens:{" "}
+                {TEMPLATE_TOKENS.join(", ")}. {"{{reputacion}}"} resume estrellas
+                y reseñas, y se acorta si faltan. Si el giro tiene página de
+                ejemplo, el seguimiento agrega el enlace al final. El botón de
+                WhatsApp solo abre el chat; no envía nada.
               </p>
             </div>
             <div className="space-y-2">
@@ -438,29 +447,33 @@ function FilterChip({
 function LeadCard({
   lead,
   template,
+  publicUrl,
   onUpdated,
 }: {
   lead: MapsLead;
   template: string;
+  publicUrl: string;
   onUpdated: (lead: MapsLead) => void;
 }) {
   const { toast } = useToast();
   const [notesDraft, setNotesDraft] = React.useState<string | null>(null);
-  const [messageOverride, setMessageOverride] = React.useState<string | null>(
-    null,
-  );
+  const [openingOverride, setOpeningOverride] = React.useState<string | null>(null);
+  const [followUpOverride, setFollowUpOverride] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [personalizing, setPersonalizing] = React.useState(false);
   const notes = notesDraft ?? lead.notes;
-  const message =
-    messageOverride ??
-    renderLeadMessage(template, {
-      name: lead.name,
-      specialty: lead.specialty,
-      city: lead.city,
-      rating: lead.rating,
-      userRatingCount: lead.user_rating_count,
-    });
+  const leadFields = {
+    name: lead.name,
+    specialty: lead.specialty,
+    city: lead.city,
+    rating: lead.rating,
+    userRatingCount: lead.user_rating_count,
+  };
+  const opening =
+    openingOverride ?? buildOpeningMessage(leadFields, { publicUrl });
+  const followUp =
+    followUpOverride ??
+    buildFollowUpMessage(leadFields, { template, publicUrl });
 
   async function onStatus(next: MapsLeadStatus) {
     const previous = lead;
@@ -512,15 +525,15 @@ function LeadCard({
         userRatingCount: lead.user_rating_count,
         address: lead.address,
         leadReason: lead.lead_reason,
-        template,
-        currentMessage: message,
+        template: OPENING_WHATSAPP_TEMPLATE,
+        currentMessage: opening,
       });
       if (!result.ok) {
         toast(result.message, "error");
         return;
       }
-      setMessageOverride(result.text);
-      toast("Mensaje personalizado. Revísalo antes de abrirlo en WhatsApp.", "success");
+      setOpeningOverride(result.text);
+      toast("Apertura personalizada. Revísela antes de abrir WhatsApp.", "success");
     } catch (error) {
       toast(error instanceof Error ? error.message : String(error), "error");
     } finally {
@@ -528,10 +541,10 @@ function LeadCard({
     }
   }
 
-  async function copyMessage() {
+  async function copyMessage(text: string, label: string) {
     try {
-      await navigator.clipboard.writeText(message);
-      toast("Mensaje copiado.", "success");
+      await navigator.clipboard.writeText(text);
+      toast(`${label} copiado.`, "success");
     } catch {
       toast("No se pudo copiar. Selecciona el texto y cópialo a mano.", "error");
     }
@@ -551,7 +564,12 @@ function LeadCard({
     });
   }
 
-  const href = lead.whatsapp_e164 ? whatsAppHref(lead.whatsapp_e164, message) : null;
+  const openingHref = lead.whatsapp_e164
+    ? whatsAppHref(lead.whatsapp_e164, opening)
+    : null;
+  const followUpHref = lead.whatsapp_e164
+    ? whatsAppHref(lead.whatsapp_e164, followUp)
+    : null;
   const phone = lead.phone_international || lead.phone_national;
   const savedOn = new Intl.DateTimeFormat("es-MX", {
     dateStyle: "medium",
@@ -656,66 +674,136 @@ function LeadCard({
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor={`message-${lead.id}`}>Mensaje</Label>
-          <Textarea
-            id={`message-${lead.id}`}
-            value={message}
-            onChange={(event) => setMessageOverride(event.target.value)}
-            rows={5}
-            className="min-h-28"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {href ? (
-            <Button asChild className="w-full sm:w-auto">
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={onOpenWhatsApp}
+        <MessageDraft
+          id={`opening-${lead.id}`}
+          label="Mensaje de apertura"
+          hint="Primer contacto. Corto y según el giro."
+          value={opening}
+          rows={4}
+          onChange={setOpeningOverride}
+          href={openingHref}
+          onOpen={onOpenWhatsApp}
+          onCopy={() => void copyMessage(opening, "Mensaje de apertura")}
+          extra={
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => void onPersonalize()}
+                disabled={personalizing}
               >
-                <MessageCircle className="size-4" aria-hidden="true" />
-                Abrir WhatsApp
-              </a>
-            </Button>
-          ) : (
-            <Button type="button" className="w-full sm:w-auto" disabled>
-              Sin teléfono para WhatsApp
-            </Button>
-          )}
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full sm:w-auto"
-            onClick={() => void copyMessage()}
-          >
-            <Copy className="size-4" aria-hidden="true" />
-            Copiar mensaje
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full sm:w-auto"
-            onClick={() => void onPersonalize()}
-            disabled={personalizing}
-          >
-            {personalizing ? <Spinner /> : <Sparkles className="size-4" aria-hidden="true" />}
-            Personalizar con IA
-          </Button>
-          {messageOverride !== null ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full sm:w-auto"
-              onClick={() => setMessageOverride(null)}
-            >
-              Volver a la plantilla
-            </Button>
-          ) : null}
-        </div>
+                {personalizing ? <Spinner /> : <Sparkles className="size-4" aria-hidden="true" />}
+                Personalizar con IA
+              </Button>
+              {openingOverride !== null ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full sm:w-auto"
+                  onClick={() => setOpeningOverride(null)}
+                >
+                  Volver a la plantilla
+                </Button>
+              ) : null}
+            </>
+          }
+        />
+        <MessageDraft
+          id={`followup-${lead.id}`}
+          label="Mensaje de seguimiento"
+          hint="Cuando ya contestaron. Incluye la oferta y, si existe, el ejemplo."
+          value={followUp}
+          rows={6}
+          onChange={setFollowUpOverride}
+          href={followUpHref}
+          onOpen={onOpenWhatsApp}
+          onCopy={() => void copyMessage(followUp, "Mensaje de seguimiento")}
+          extra={
+            followUpOverride !== null ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full sm:w-auto"
+                onClick={() => setFollowUpOverride(null)}
+              >
+                Volver a la plantilla
+              </Button>
+            ) : null
+          }
+        />
       </CardContent>
     </Card>
+  );
+}
+
+function MessageDraft({
+  id,
+  label,
+  hint,
+  value,
+  rows,
+  onChange,
+  href,
+  onOpen,
+  onCopy,
+  extra,
+}: {
+  id: string;
+  label: string;
+  hint: string;
+  value: string;
+  rows: number;
+  onChange: (value: string) => void;
+  href: string | null;
+  onOpen: () => void;
+  onCopy: () => void;
+  extra?: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <div>
+        <Label htmlFor={id}>{label}</Label>
+        <p className="text-xs leading-5 text-muted-foreground">{hint}</p>
+      </div>
+      <Textarea
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        rows={rows}
+        className="min-h-28"
+      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        {href ? (
+          <Button asChild className="w-full sm:w-auto">
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onOpen}
+              aria-label={`Abrir WhatsApp con ${label.toLowerCase()}`}
+            >
+              <MessageCircle className="size-4" aria-hidden="true" />
+              Abrir WhatsApp
+            </a>
+          </Button>
+        ) : (
+          <Button type="button" className="w-full sm:w-auto" disabled>
+            Sin teléfono para WhatsApp
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full sm:w-auto"
+          onClick={onCopy}
+          aria-label={`Copiar ${label.toLowerCase()}`}
+        >
+          <Copy className="size-4" aria-hidden="true" />
+          Copiar mensaje
+        </Button>
+        {extra}
+      </div>
+    </div>
   );
 }

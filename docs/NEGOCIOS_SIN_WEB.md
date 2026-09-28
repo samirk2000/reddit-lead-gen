@@ -70,8 +70,17 @@ Revisa el uso en Google Cloud → Google Maps Platform → Quotas, y pon una ale
 
 ## WhatsApp
 
-El mensaje sale de una plantilla editable. Si el usuario no guardó otra, la de Torio Web arma un texto por giro (la especialidad es la palabra con la que se buscó, por ejemplo `dentista` o `abogado`): quién busca, qué escriben en Google, el lugar de las fotos y un ejemplo de artículo local. Si el giro no está en esa tabla, el texto usa "clientes", el giro buscado, "contactar", "negocio" y un artículo del tipo "5 cosas que debe saber antes de contratar un {giro} en {ciudad}" (con "una" si el giro es femenino, por ejemplo "una florería").
+Cada prospecto tiene dos textos. No se guardan por persona: se arman al mostrar la tarjeta.
 
-Tokens: `{{nombre}}`, `{{especialidad}}`, `{{calificacion}}`, `{{reseñas}}`, `{{ciudad}}`, `{{reputacion}}`, `{{clientes}}`, `{{busqueda}}`, `{{accion}}`, `{{lugar}}`, `{{accion_corta}}`, `{{ejemplo_blog}}`. `{{reputacion}}` pone las estrellas y las reseñas. Si falta la calificación, las reseñas o ambas, esa frase se acorta y no deja "undefined". "Muy buena reputación" solo entra con 4 estrellas o más y al menos una reseña. El precio es `Desde $8,000 MXN` para todos los giros.
+- **Apertura.** Primer contacto, corto y según el giro. No usa la plantilla guardada. Pregunta si puede mandar un ejemplo.
+- **Seguimiento.** La plantilla editable de abajo (la que vive en `maps_settings`). Ahí está la oferta: servicios, fotos, botón de WhatsApp, página optimizada para que Google la encuentre, blog opcional y `Desde $8,000 MXN`. Si ese giro tiene página de ejemplo (`/demo/dentista` hoy), al final se agrega `Aquí un ejemplo: {origen}/demo/dentista?nombre={nombre}`. El origen sale de `NEXT_PUBLIC_APP_URL` o `APP_URL`, si no del host de la petición, y si tampoco, de `https://reddit-lead-gen.vercel.app`.
 
-Una plantilla ya guardada en `maps_settings` no se reemplaza. Los mensajes no se guardan por prospecto: se vuelven a armar al mostrar la tarjeta. **Abrir WhatsApp** normaliza números mexicanos a `52` + 10 dígitos (quita el `1` viejo de `521`, y prefijos `044` / `045` / `01`) y, si el prospecto estaba en `nuevo`, lo marca `contactado`. **Copiar mensaje** no cambia el estado. **Personalizar con IA** reescribe el texto con Gemini y no lo envía. La instrucción pide mencionar visibilidad en Google (sin prometer posiciones ni resultados), fotos del trabajo, botón de WhatsApp y artículos de blog locales como opción.
+Si el giro no está en la tabla, el seguimiento usa "clientes", el giro buscado, "contactar", "negocio" y un artículo del tipo "5 cosas que debe saber antes de contratar un {giro} en {ciudad}" (con "una" si el giro es femenino).
+
+Tokens del seguimiento: `{{nombre}}`, `{{especialidad}}`, `{{calificacion}}`, `{{reseñas}}`, `{{ciudad}}`, `{{reputacion}}`, `{{clientes}}`, `{{busqueda}}`, `{{accion}}`, `{{lugar}}`, `{{accion_corta}}`, `{{ejemplo_blog}}`, `{{demo_url}}`. `{{reputacion}}` y la apertura acortan la frase si falta la calificación o las reseñas. "Muy buena reputación" solo entra con 4 estrellas o más y al menos una reseña. Una plantilla ya guardada no se reemplaza: sigue siendo el seguimiento.
+
+**Abrir WhatsApp** (hay uno por mensaje) normaliza números mexicanos a `52` + 10 dígitos y, si el prospecto estaba en `nuevo`, lo marca `contactado`. **Copiar mensaje** no cambia el estado. **Personalizar con IA** reescribe solo la apertura, en unas tres líneas, sin precio ni promesa de posiciones.
+
+## Página de ejemplo
+
+`/demo/dentista` es pública: el middleware no pide login. El nombre del prospecto puede ir en `?nombre=` y se muestra en el título después de limpiar etiquetas y caracteres raros. Sirve para el enlace del mensaje de seguimiento. Otros giros se agregan como otra ficha en `lib/demo/` y la ruta `/demo/<giro>`.

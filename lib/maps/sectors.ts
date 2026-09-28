@@ -19,6 +19,8 @@ export type SectorCopy = {
   accionCorta: string;
   /** Local-SEO article title. May include `{{ciudad}}`. */
   ejemploBlog: string;
+  /** Public sample site at `/demo/<slug>`, when one exists for this giro. */
+  demoSlug?: string;
 };
 
 type SectorKey = string | { key: string; busqueda: string; exactOnly?: boolean };
@@ -52,6 +54,7 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta un blanqueamiento en {{ciudad}}?",
+    demoSlug: "dentista",
   },
   [
     "dentista",

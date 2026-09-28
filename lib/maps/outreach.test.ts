@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { DEFAULT_OUTREACH_PRICE, DEFAULT_WHATSAPP_TEMPLATE } from "@/lib/maps/constants";
-import { buildDefaultLeadMessage, renderLeadMessage, type MessageLead } from "@/lib/maps/message";
+import {
+  buildDefaultLeadMessage,
+  buildFollowUpMessage,
+  buildOpeningMessage,
+  renderLeadMessage,
+  type MessageLead,
+} from "@/lib/maps/message";
 import { buildPersonalizePrompt } from "@/lib/maps/personalize-prompt";
 import { knownSectorKeys, resolveSector } from "@/lib/maps/sectors";
 
@@ -43,8 +49,28 @@ describe("default outreach message", () => {
         'Le podemos hacer una página profesional donde muestre sus servicios, fotos de su consultorio y trabajos, reseñas de pacientes y un botón directo a WhatsApp para agendar. La dejamos optimizada para que Google la encuentre, y si le interesa, también escribimos artículos para su blog (por ejemplo, "¿Cuánto cuesta un blanqueamiento en Querétaro?") para que aparezca en más búsquedas de la zona.',
         "",
         "Desde $8,000 MXN. ¿Le mando un ejemplo de cómo quedaría?",
+        "",
+        "Aquí un ejemplo: https://reddit-lead-gen.vercel.app/demo/dentista?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA",
       ].join("\n"),
     );
+  });
+
+  it("arma la apertura corta de un dentista", () => {
+    const text = buildOpeningMessage(
+      lead({
+        name: "ODONTOLOGIA FAMILIAR ESPECIALIZADA",
+        specialty: "dentista",
+        city: "Querétaro",
+        rating: 4.9,
+        userRatingCount: 157,
+      }),
+    );
+    assert.equal(
+      text,
+      'Hola, le escribo de Torio Web. Vi ODONTOLOGIA FAMILIAR ESPECIALIZADA en Google Maps, 4.9 estrellas con 157 reseñas, ¡muy buena reputación! Noté que no tiene página web y mucha gente busca "dentista en Querétaro" en Google antes de agendar. ¿Le puedo mandar un ejemplo de cómo se vería la suya?',
+    );
+    assert.equal(text.includes("8,000"), false);
+    assert.equal(text.includes("/demo/"), false);
   });
 
   it("arma el texto de un abogado", () => {
@@ -64,6 +90,7 @@ describe("default outreach message", () => {
     assert.match(text, /¿Cuánto cobra un abogado por un divorcio en Guadalajara\?/);
     assert.match(text, /Desde \$8,000 MXN/);
     assert.equal(text.includes("pacientes"), false);
+    assert.equal(text.includes("/demo/"), false);
     assert.equal(text.includes("ranking"), false);
     assert.equal(text.includes("primera página"), false);
   });
@@ -290,8 +317,62 @@ describe("sector matching", () => {
   });
 });
 
+describe("opening and saved template", () => {
+  const dentist = lead({
+    name: "ODONTOLOGIA FAMILIAR ESPECIALIZADA",
+    specialty: "odontólogo",
+    city: "Querétaro",
+    rating: 4.9,
+    userRatingCount: 157,
+  });
+
+  it("degrada la apertura si faltan estrellas o reseñas", () => {
+    const none = buildOpeningMessage({
+      ...dentist,
+      rating: null,
+      userRatingCount: null,
+    });
+    assert.match(none, /en Google Maps\. Noté que no tiene página web/);
+    assert.equal(none.includes("undefined"), false);
+    assert.equal(none.includes("muy buena reputación"), false);
+
+    const low = buildOpeningMessage({ ...dentist, rating: 3.2, userRatingCount: 8 });
+    assert.match(low, /Google Maps, 3\.2 estrellas con 8 reseñas\. Noté/);
+    assert.equal(low.includes("muy buena reputación"), false);
+  });
+
+  it("usa la plantilla guardada solo en el seguimiento y agrega el demo", () => {
+    const followUp = buildFollowUpMessage(dentist, {
+      template: OLD_TEMPLATE,
+      publicUrl: "https://reddit-lead-gen.vercel.app",
+    });
+    assert.match(followUp, /Estuve viendo ODONTOLOGIA FAMILIAR ESPECIALIZADA/);
+    assert.match(followUp, /alrededor de \$8,000 MXN/);
+    assert.match(
+      followUp,
+      /Aquí un ejemplo: https:\/\/reddit-lead-gen\.vercel\.app\/demo\/dentista\?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA$/,
+    );
+    const opening = buildOpeningMessage(dentist);
+    assert.match(opening, /¿Le puedo mandar un ejemplo/);
+    assert.equal(opening.includes("Estuve viendo"), false);
+  });
+
+  it("no duplica el enlace si la plantilla ya trae el demo", () => {
+    const template = "Vea {{demo_url}} cuando pueda.";
+    const text = buildFollowUpMessage(dentist, {
+      template,
+      publicUrl: "https://reddit-lead-gen.vercel.app",
+    });
+    assert.equal(
+      text,
+      "Vea https://reddit-lead-gen.vercel.app/demo/dentista?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA cuando pueda.",
+    );
+    assert.equal(text.split("/demo/").length - 1, 1);
+  });
+});
+
 describe("personalize prompt", () => {
-  it("pide visibilidad, trabajo, WhatsApp y blog sin prometer ranking", () => {
+  it("pide una apertura corta y no promete ranking", () => {
     const prompt = buildPersonalizePrompt({
       name: "ODONTOLOGIA FAMILIAR ESPECIALIZADA",
       specialty: "dentista",
@@ -303,18 +384,16 @@ describe("personalize prompt", () => {
       template: DEFAULT_WHATSAPP_TEMPLATE,
       currentMessage: "borrador",
     });
-    assert.match(prompt, /fotos del lugar y del trabajo/);
-    assert.match(prompt, /botón directo a WhatsApp/);
-    assert.match(prompt, /Google pueda encontrarla/);
-    assert.match(prompt, /artículos de blog/);
-    assert.match(prompt, /¿Cuánto cuesta un blanqueamiento en Querétaro\?/);
-    assert.match(prompt, /Desde \$8,000 MXN/);
+    assert.match(prompt, /Máximo 3 líneas/);
+    assert.match(prompt, /420 caracteres/);
     assert.match(prompt, /No prometas posiciones/);
-    assert.match(prompt, /no garantices/);
+    assert.match(prompt, /No incluyas precio/);
+    assert.match(prompt, /antes de agendar/);
     assert.match(prompt, /Trato de usted/);
+    assert.equal(prompt.includes("Desde $8,000"), false);
   });
 
-  it("cambia el ejemplo de blog según el giro aunque la plantilla sea la anterior", () => {
+  it("no inventa calificación cuando falta", () => {
     const prompt = buildPersonalizePrompt({
       name: "Despacho Ramírez",
       specialty: "Abogados",
@@ -326,10 +405,10 @@ describe("personalize prompt", () => {
       template: OLD_TEMPLATE,
       currentMessage: "borrador viejo",
     });
-    assert.match(prompt, /¿Cuánto cobra un abogado por un divorcio en Guadalajara\?/);
     assert.match(prompt, /sin calificación/);
     assert.match(prompt, /sin reseñas/);
     assert.match(prompt, /red social/);
-    assert.match(prompt, /PLANTILLA:\nHola, le escribo de Torio Web\. Estuve viendo/);
+    assert.match(prompt, /antes de consultar/);
+    assert.equal(prompt.includes("muy buena reputación"), false);
   });
 });
