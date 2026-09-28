@@ -19,7 +19,7 @@ export type SectorCopy = {
   accionCorta: string;
   /** Local-SEO article title. May include `{{ciudad}}`. */
   ejemploBlog: string;
-  /** Public sample site at `/demo/<slug>`, when one exists for this giro. */
+  /** Key into the external sample-page map, when this giro has one. */
   demoSlug?: string;
 };
 

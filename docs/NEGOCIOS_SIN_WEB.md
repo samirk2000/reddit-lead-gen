@@ -73,7 +73,7 @@ Revisa el uso en Google Cloud → Google Maps Platform → Quotas, y pon una ale
 Cada prospecto tiene dos textos. No se guardan por persona: se arman al mostrar la tarjeta.
 
 - **Apertura.** Primer contacto, corto y según el giro. No usa la plantilla guardada. Pregunta si puede mandar un ejemplo.
-- **Seguimiento.** La plantilla editable de abajo (la que vive en `maps_settings`). Ahí está la oferta: servicios, fotos, botón de WhatsApp, página optimizada para que Google la encuentre, blog opcional y `Desde $8,000 MXN`. Si ese giro tiene página de ejemplo (`/demo/dentista` hoy), al final se agrega `Aquí un ejemplo: {origen}/demo/dentista?nombre={nombre}`. El origen sale de `NEXT_PUBLIC_APP_URL` o `APP_URL`, si no del host de la petición, y si tampoco, de `https://reddit-lead-gen.vercel.app`.
+- **Seguimiento.** La plantilla editable de abajo (la que vive en `maps_settings`). Ahí está la oferta: servicios, fotos, botón de WhatsApp, página optimizada para que Google la encuentre, blog opcional y `Desde $8,000 MXN`. Si ese giro tiene página de ejemplo (hoy la familia dental), al final se agrega `Aquí un ejemplo: https://torioweb.com/ejemplos/dentista?nombre={nombre}`. La base `https://torioweb.com/ejemplos` está en una constante y se puede cambiar con `NEXT_PUBLIC_DEMOS_BASE_URL`.
 
 Si el giro no está en la tabla, el seguimiento usa "clientes", el giro buscado, "contactar", "negocio" y un artículo del tipo "5 cosas que debe saber antes de contratar un {giro} en {ciudad}" (con "una" si el giro es femenino).
 
@@ -81,6 +81,6 @@ Tokens del seguimiento: `{{nombre}}`, `{{especialidad}}`, `{{calificacion}}`, `{
 
 **Abrir WhatsApp** (hay uno por mensaje) normaliza números mexicanos a `52` + 10 dígitos y, si el prospecto estaba en `nuevo`, lo marca `contactado`. **Copiar mensaje** no cambia el estado. **Personalizar con IA** reescribe solo la apertura, en unas tres líneas, sin precio ni promesa de posiciones.
 
-## Página de ejemplo
+## Páginas de ejemplo
 
-`/demo/dentista` es pública: el middleware no pide login. El nombre del prospecto puede ir en `?nombre=` y se muestra en el título después de limpiar etiquetas y caracteres raros. Sirve para el enlace del mensaje de seguimiento. Otros giros se agregan como otra ficha en `lib/demo/` y la ruta `/demo/<giro>`.
+Las páginas de ejemplo viven en torioweb.com. Esta app solo guarda el mapa de giro a URL (`lib/demo/links.ts`). Hoy la familia dental (dentista, odontólogo, clínica dental, consultorio dental) apunta a `https://torioweb.com/ejemplos/dentista`. El nombre del prospecto va en `?nombre=`. Otros giros se agregan en ese mapa.

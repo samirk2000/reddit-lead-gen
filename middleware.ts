@@ -4,7 +4,6 @@ import {
   type SetAllCookies,
   type GetAllCookies,
 } from "@supabase/ssr";
-import { isPublicDemoPath } from "@/lib/demo/public-path";
 import { type Database } from "@/lib/supabase/types";
 
 /** Route prefixes that require an authenticated session. */
@@ -17,10 +16,6 @@ const PROTECTED_ROUTES = ["/dashboard"];
  * and redirects unauthenticated users away from protected routes.
  */
 export async function middleware(request: NextRequest) {
-  if (isPublicDemoPath(request.nextUrl.pathname)) {
-    return NextResponse.next();
-  }
-
   let response = NextResponse.next({ request });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -82,6 +77,6 @@ export const config = {
      * - favicon.ico and any path containing a file extension
      * - `/api` (handled by its own route handlers)
      */
-    "/((?!_next/static|_next/image|favicon.ico|demo(?:/|$)|.*\\..*|api).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\..*|api).*)",
   ],
 };

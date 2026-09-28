@@ -39,7 +39,7 @@ export const OPENING_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Vi {{no
 /**
  * Follow-up copy, saved in `maps_settings` when the operator customizes it.
  * Sector tokens are filled per lead. `{{reputacion}}` is the stars/reviews
- * clause. A demo link is appended in code when that giro has a `/demo` page.
+ * clause. An external sample link is appended in code when that giro has one.
  */
 export const DEFAULT_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Vi {{nombre}} en Google Maps{{reputacion}}Pero noté que no tiene sitio web, y muchos {{clientes}} buscan "{{busqueda}} en {{ciudad}}" en Google antes de {{accion}}.
 

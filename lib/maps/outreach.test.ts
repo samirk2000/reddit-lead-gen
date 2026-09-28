@@ -50,7 +50,7 @@ describe("default outreach message", () => {
         "",
         "Desde $8,000 MXN. ¿Le mando un ejemplo de cómo quedaría?",
         "",
-        "Aquí un ejemplo: https://reddit-lead-gen.vercel.app/demo/dentista?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA",
+        "Aquí un ejemplo: https://torioweb.com/ejemplos/dentista?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA",
       ].join("\n"),
     );
   });
@@ -70,7 +70,7 @@ describe("default outreach message", () => {
       'Hola, le escribo de Torio Web. Vi ODONTOLOGIA FAMILIAR ESPECIALIZADA en Google Maps, 4.9 estrellas con 157 reseñas, ¡muy buena reputación! Noté que no tiene página web y mucha gente busca "dentista en Querétaro" en Google antes de agendar. ¿Le puedo mandar un ejemplo de cómo se vería la suya?',
     );
     assert.equal(text.includes("8,000"), false);
-    assert.equal(text.includes("/demo/"), false);
+    assert.equal(text.includes("torioweb.com"), false);
   });
 
   it("arma el texto de un abogado", () => {
@@ -90,7 +90,7 @@ describe("default outreach message", () => {
     assert.match(text, /¿Cuánto cobra un abogado por un divorcio en Guadalajara\?/);
     assert.match(text, /Desde \$8,000 MXN/);
     assert.equal(text.includes("pacientes"), false);
-    assert.equal(text.includes("/demo/"), false);
+    assert.equal(text.includes("Aquí un ejemplo"), false);
     assert.equal(text.includes("ranking"), false);
     assert.equal(text.includes("primera página"), false);
   });
@@ -186,7 +186,7 @@ describe("reputation clause", () => {
     assert.equal(text.includes("undefined"), false);
     assert.equal(text.includes("estrellas"), false);
     assert.equal(/\d+\s+reseñas/.test(text), false);
-    assert.equal(text.includes("s/d"), false);
+    assert.equal(/(?:^|[^a-z])s\/d(?:[^a-z]|$)/i.test(text), false);
     assert.equal(text.includes("muy buena reputación"), false);
   });
 
@@ -344,13 +344,12 @@ describe("opening and saved template", () => {
   it("usa la plantilla guardada solo en el seguimiento y agrega el demo", () => {
     const followUp = buildFollowUpMessage(dentist, {
       template: OLD_TEMPLATE,
-      publicUrl: "https://reddit-lead-gen.vercel.app",
     });
     assert.match(followUp, /Estuve viendo ODONTOLOGIA FAMILIAR ESPECIALIZADA/);
     assert.match(followUp, /alrededor de \$8,000 MXN/);
     assert.match(
       followUp,
-      /Aquí un ejemplo: https:\/\/reddit-lead-gen\.vercel\.app\/demo\/dentista\?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA$/,
+      /Aquí un ejemplo: https:\/\/torioweb\.com\/ejemplos\/dentista\?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA$/,
     );
     const opening = buildOpeningMessage(dentist);
     assert.match(opening, /¿Le puedo mandar un ejemplo/);
@@ -359,15 +358,12 @@ describe("opening and saved template", () => {
 
   it("no duplica el enlace si la plantilla ya trae el demo", () => {
     const template = "Vea {{demo_url}} cuando pueda.";
-    const text = buildFollowUpMessage(dentist, {
-      template,
-      publicUrl: "https://reddit-lead-gen.vercel.app",
-    });
+    const text = buildFollowUpMessage(dentist, { template });
     assert.equal(
       text,
-      "Vea https://reddit-lead-gen.vercel.app/demo/dentista?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA cuando pueda.",
+      "Vea https://torioweb.com/ejemplos/dentista?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA cuando pueda.",
     );
-    assert.equal(text.split("/demo/").length - 1, 1);
+    assert.equal(text.split("ejemplos/dentista").length - 1, 1);
   });
 });
 

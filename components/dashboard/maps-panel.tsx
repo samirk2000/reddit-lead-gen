@@ -40,7 +40,6 @@ type MapsPanelProps = {
   initialTemplate: string;
   placesReady: boolean;
   schemaReady: boolean;
-  publicUrl: string;
 };
 
 function sortLeads(leads: MapsLead[]): MapsLead[] {
@@ -66,7 +65,6 @@ export function MapsPanel({
   initialTemplate,
   placesReady,
   schemaReady,
-  publicUrl,
 }: MapsPanelProps) {
   const { toast } = useToast();
   const [leads, setLeads] = React.useState(initialLeads);
@@ -344,7 +342,6 @@ export function MapsPanel({
                 <LeadCard
                   lead={lead}
                   template={template}
-                  publicUrl={publicUrl}
                   onUpdated={replaceLead}
                 />
               </li>
@@ -447,12 +444,10 @@ function FilterChip({
 function LeadCard({
   lead,
   template,
-  publicUrl,
   onUpdated,
 }: {
   lead: MapsLead;
   template: string;
-  publicUrl: string;
   onUpdated: (lead: MapsLead) => void;
 }) {
   const { toast } = useToast();
@@ -469,11 +464,9 @@ function LeadCard({
     rating: lead.rating,
     userRatingCount: lead.user_rating_count,
   };
-  const opening =
-    openingOverride ?? buildOpeningMessage(leadFields, { publicUrl });
+  const opening = openingOverride ?? buildOpeningMessage(leadFields);
   const followUp =
-    followUpOverride ??
-    buildFollowUpMessage(leadFields, { template, publicUrl });
+    followUpOverride ?? buildFollowUpMessage(leadFields, { template });
 
   async function onStatus(next: MapsLeadStatus) {
     const previous = lead;
