@@ -14,28 +14,47 @@
 --      set user_id = 'UUID-DEL-USUARIO'
 --    where user_id is null;
 
+-- PL/pgSQL plans every static query before the IF runs, so
+-- `select from public.reddit_web_leads` errors with 42P01 when the table
+-- is missing. The row check and the drop go through EXECUTE, which is
+-- planned only after to_regclass confirms the legacy table is there.
 do $$
+declare
+  legacy_has_rows boolean;
 begin
-  if to_regclass('public.reddit_web_leads') is not null
-     and not exists (select 1 from public.reddit_web_leads)
-     and exists (
-       select 1
-       from information_schema.columns
-       where table_schema = 'public'
-         and table_name = 'reddit_web_leads'
-         and column_name = 'id'
-         and udt_name = 'int8'
-     )
-     and not exists (
-       select 1
-       from information_schema.columns
-       where table_schema = 'public'
-         and table_name = 'reddit_web_leads'
-         and column_name = 'user_id'
-     )
-  then
-    drop table public.reddit_web_leads;
+  if to_regclass('public.reddit_web_leads') is null then
+    return;
   end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'reddit_web_leads'
+      and column_name = 'id'
+      and udt_name = 'int8'
+  ) then
+    return;
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'reddit_web_leads'
+      and column_name = 'user_id'
+  ) then
+    return;
+  end if;
+
+  execute 'select exists (select 1 from public.reddit_web_leads)'
+    into legacy_has_rows;
+
+  if legacy_has_rows then
+    return;
+  end if;
+
+  execute 'drop table public.reddit_web_leads';
 end $$;
 
 create table if not exists public.reddit_web_leads (
