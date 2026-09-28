@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, KeyRound, MapPin, Settings, Search } from "lucide-react";
+import { BarChart3, KeyRound, MapPin, Rss, Settings, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -17,6 +17,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Leads", icon: BarChart3 },
   { href: "/dashboard/keywords", label: "Keywords", icon: KeyRound },
   { href: "/dashboard/maps", label: "Negocios sin web", icon: MapPin },
+  { href: "/dashboard/reddit-web", label: "Leads de Reddit", icon: Rss },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
