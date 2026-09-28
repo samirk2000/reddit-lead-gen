@@ -70,4 +70,17 @@ Revisa el uso en Google Cloud → Google Maps Platform → Quotas, y pon una ale
 
 ## WhatsApp
 
-El mensaje sale de una plantilla editable (`{{nombre}}`, `{{especialidad}}`, `{{calificacion}}`, `{{reseñas}}`, `{{ciudad}}`). **Abrir WhatsApp** normaliza números mexicanos a `52` + 10 dígitos (quita el `1` viejo de `521`, y prefijos `044` / `045` / `01`) y, si el prospecto estaba en `nuevo`, lo marca `contactado`. **Copiar mensaje** no cambia el estado. **Personalizar con IA** reescribe el texto con Gemini y no lo envía.
+Cada prospecto tiene dos textos. No se guardan por persona: se arman al mostrar la tarjeta.
+
+- **Apertura.** Primer contacto, corto y según el giro. No usa la plantilla guardada. Pregunta si puede mandar un ejemplo.
+- **Seguimiento.** La plantilla editable de abajo (la que vive en `maps_settings`). Ahí está la oferta: servicios, fotos, botón de WhatsApp, página optimizada para que Google la encuentre, blog opcional y `Desde $8,000 MXN`. Si ese giro tiene página de ejemplo (hoy la familia dental), al final se agrega `Aquí un ejemplo: https://torioweb.com/ejemplos/dentista/?nombre={nombre}`. La base `https://torioweb.com/ejemplos` está en una constante y se puede cambiar con `NEXT_PUBLIC_DEMOS_BASE_URL`.
+
+Si el giro no está en la tabla, el seguimiento usa "clientes", el giro buscado, "contactar", "negocio" y un artículo del tipo "5 cosas que debe saber antes de contratar un {giro} en {ciudad}" (con "una" si el giro es femenino).
+
+Tokens del seguimiento: `{{nombre}}`, `{{especialidad}}`, `{{calificacion}}`, `{{reseñas}}`, `{{ciudad}}`, `{{reputacion}}`, `{{clientes}}`, `{{busqueda}}`, `{{accion}}`, `{{lugar}}`, `{{accion_corta}}`, `{{ejemplo_blog}}`, `{{demo_url}}`. `{{reputacion}}` y la apertura acortan la frase si falta la calificación o las reseñas. "Muy buena reputación" solo entra con 4 estrellas o más y al menos una reseña. Una plantilla ya guardada no se reemplaza: sigue siendo el seguimiento.
+
+**Abrir WhatsApp** (hay uno por mensaje) normaliza números mexicanos a `52` + 10 dígitos y, si el prospecto estaba en `nuevo`, lo marca `contactado`. **Copiar mensaje** no cambia el estado. **Personalizar con IA** reescribe solo la apertura, en unas tres líneas, sin precio ni promesa de posiciones.
+
+## Páginas de ejemplo
+
+Las páginas de ejemplo viven en torioweb.com. Esta app solo guarda el mapa de giro a URL (`lib/demo/links.ts`). Hoy la familia dental (dentista, odontólogo, clínica dental, consultorio dental) apunta a `https://torioweb.com/ejemplos/dentista/`. El nombre del prospecto va en `?nombre=`. Otros giros se agregan en ese mapa.

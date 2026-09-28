@@ -1,0 +1,541 @@
+/**
+ * Outreach copy by giro.
+ *
+ * `maps_leads.specialty` is the search keyword the operator typed (see
+ * `SPECIALTY_PRESETS` and `searchMapsLeads`), not a Google Places type.
+ * Keys are matched without accents, case, or a trailing Spanish plural.
+ */
+
+export type SectorCopy = {
+  /** Who looks for this business, e.g. "pacientes". */
+  clientes: string;
+  /** What people type into Google, without the city. */
+  busqueda: string;
+  /** Verb phrase after "antes de". */
+  accion: string;
+  /** Place shown in the photos, e.g. "consultorio". */
+  lugar: string;
+  /** Short action for the WhatsApp button. */
+  accionCorta: string;
+  /** Local-SEO article title. May include `{{ciudad}}`. */
+  ejemploBlog: string;
+  /** Key into the external sample-page map, when this giro has one. */
+  demoSlug?: string;
+};
+
+type SectorKey = string | { key: string; busqueda: string; exactOnly?: boolean };
+
+const SECTORS = new Map<string, SectorCopy>();
+/** Short or ambiguous keys match only the whole specialty, not a longer phrase. */
+const EXACT_ONLY = new Set<string>();
+
+function add(copy: SectorCopy, keys: readonly SectorKey[]): void {
+  for (const entry of keys) {
+    const rawKey = typeof entry === "string" ? entry : entry.key;
+    const busqueda = typeof entry === "string" ? copy.busqueda : entry.busqueda;
+    const exactOnly = typeof entry === "string" ? false : entry.exactOnly === true;
+    const normalized = normalizeSectorKey(rawKey);
+    if (!normalized) {
+      throw new Error("Llave de giro vacía.");
+    }
+    if (SECTORS.has(normalized)) {
+      throw new Error(`Giro duplicado: ${normalized}`);
+    }
+    SECTORS.set(normalized, { ...copy, busqueda });
+    if (exactOnly) EXACT_ONLY.add(normalized);
+  }
+}
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "dentista",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta un blanqueamiento en {{ciudad}}?",
+    demoSlug: "dentista",
+  },
+  [
+    "dentista",
+    { key: "odontólogo", busqueda: "odontólogo" },
+    { key: "odontóloga", busqueda: "odontóloga" },
+    { key: "odontología", busqueda: "odontología" },
+    { key: "clínica dental", busqueda: "clínica dental" },
+    { key: "consultorio dental", busqueda: "consultorio dental" },
+  ],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "ortodoncista",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuestan los brackets en {{ciudad}}?",
+  },
+  ["ortodoncista", { key: "ortodoncia", busqueda: "ortodoncia" }],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "dermatólogo",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta un tratamiento para el acné en {{ciudad}}?",
+  },
+  [
+    "dermatólogo",
+    { key: "dermatóloga", busqueda: "dermatóloga" },
+    { key: "dermatología", busqueda: "dermatología" },
+  ],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "médico estético",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog:
+      "¿Cuánto cuesta un tratamiento de rejuvenecimiento facial en {{ciudad}}?",
+  },
+  [
+    "médico estético",
+    { key: "médica estética", busqueda: "médica estética" },
+    { key: "medicina estética", busqueda: "medicina estética" },
+  ],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "médico",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta una consulta médica en {{ciudad}}?",
+  },
+  [
+    "médico",
+    { key: "médica", busqueda: "médica" },
+    { key: "médico general", busqueda: "médico general" },
+    { key: "doctor", busqueda: "doctor" },
+    { key: "doctora", busqueda: "doctora" },
+    { key: "clínica", busqueda: "clínica" },
+    { key: "clínica general", busqueda: "clínica general" },
+    { key: "consultorio médico", busqueda: "médico" },
+  ],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "cirujano plástico",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta una rinoplastia en {{ciudad}}?",
+  },
+  [
+    "cirujano plástico",
+    { key: "cirujana plástica", busqueda: "cirujana plástica" },
+    { key: "cirugía plástica", busqueda: "cirugía plástica" },
+  ],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "oftalmólogo",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta un examen de la vista en {{ciudad}}?",
+  },
+  ["oftalmólogo", { key: "oftalmóloga", busqueda: "oftalmóloga" }],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "fisioterapeuta",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta una sesión de fisioterapia en {{ciudad}}?",
+  },
+  ["fisioterapeuta", { key: "fisioterapia", busqueda: "fisioterapia" }],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "psicólogo",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta una sesión con un psicólogo en {{ciudad}}?",
+  },
+  [
+    "psicólogo",
+    { key: "psicóloga", busqueda: "psicóloga" },
+    { key: "psicología", busqueda: "psicología" },
+  ],
+);
+
+add(
+  {
+    clientes: "pacientes",
+    busqueda: "nutriólogo",
+    accion: "agendar",
+    lugar: "consultorio",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta una consulta de nutrición en {{ciudad}}?",
+  },
+  [
+    "nutriólogo",
+    { key: "nutrióloga", busqueda: "nutrióloga" },
+    { key: "nutricionista", busqueda: "nutricionista" },
+  ],
+);
+
+add(
+  {
+    clientes: "dueños de mascotas",
+    busqueda: "veterinario",
+    accion: "agendar",
+    lugar: "clínica",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta vacunar a un perro en {{ciudad}}?",
+  },
+  [
+    "veterinario",
+    { key: "veterinaria", busqueda: "veterinaria" },
+    { key: "vet", busqueda: "veterinario" },
+    { key: "clínica veterinaria", busqueda: "veterinario" },
+  ],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "abogado",
+    accion: "consultar",
+    lugar: "despacho",
+    accionCorta: "consultar",
+    ejemploBlog: "¿Cuánto cobra un abogado por un divorcio en {{ciudad}}?",
+  },
+  [
+    "abogado",
+    { key: "abogada", busqueda: "abogada" },
+    { key: "despacho jurídico", busqueda: "abogado" },
+  ],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "contador",
+    accion: "contratar",
+    lugar: "despacho",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cobra un contador por la declaración anual en {{ciudad}}?",
+  },
+  [
+    "contador",
+    { key: "contadora", busqueda: "contadora" },
+    { key: "contador público", busqueda: "contador" },
+  ],
+);
+
+add(
+  {
+    clientes: "comensales",
+    busqueda: "restaurante",
+    accion: "reservar",
+    lugar: "local",
+    accionCorta: "reservar",
+    ejemploBlog: "¿Dónde comer en familia en {{ciudad}}?",
+  },
+  ["restaurante", { key: "restaurant", busqueda: "restaurante" }],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "cafetería",
+    accion: "visitar",
+    lugar: "local",
+    accionCorta: "ordenar",
+    ejemploBlog: "¿Dónde encontrar una buena cafetería en {{ciudad}}?",
+  },
+  ["cafetería", { key: "café", busqueda: "cafetería" }],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "salón de belleza",
+    accion: "agendar",
+    lugar: "salón",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta un corte y color en {{ciudad}}?",
+  },
+  [
+    "salón de belleza",
+    { key: "salón", busqueda: "salón de belleza", exactOnly: true },
+  ],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "estética",
+    accion: "agendar",
+    lugar: "centro",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta un facial en {{ciudad}}?",
+  },
+  [
+    "estética",
+    { key: "centro de estética", busqueda: "estética" },
+    { key: "centro estético", busqueda: "centro estético" },
+  ],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "barbería",
+    accion: "agendar",
+    lugar: "barbería",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta un corte y barba en {{ciudad}}?",
+  },
+  ["barbería", { key: "barbero", busqueda: "barbería" }],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "gimnasio",
+    accion: "inscribirse",
+    lugar: "gimnasio",
+    accionCorta: "inscribirse",
+    ejemploBlog: "¿Cuánto cuesta la mensualidad de un gimnasio en {{ciudad}}?",
+  },
+  ["gimnasio", { key: "gym", busqueda: "gimnasio" }],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "spa",
+    accion: "reservar",
+    lugar: "spa",
+    accionCorta: "reservar",
+    ejemploBlog: "¿Cuánto cuesta un masaje en {{ciudad}}?",
+  },
+  ["spa"],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "taller mecánico",
+    accion: "llevar el auto",
+    lugar: "taller",
+    accionCorta: "cotizar",
+    ejemploBlog: "¿Cuánto cuesta un servicio de frenos en {{ciudad}}?",
+  },
+  [
+    "taller mecánico",
+    { key: "mecánico", busqueda: "mecánico" },
+    { key: "mecánica automotriz", busqueda: "taller mecánico" },
+    { key: "taller", busqueda: "taller mecánico", exactOnly: true },
+  ],
+);
+
+add(
+  {
+    clientes: "personas",
+    busqueda: "inmobiliaria",
+    accion: "comprar o rentar",
+    lugar: "oficina",
+    accionCorta: "agendar una visita",
+    ejemploBlog: "¿Cuánto cuesta rentar un departamento en {{ciudad}}?",
+  },
+  ["inmobiliaria", { key: "bienes raíces", busqueda: "inmobiliaria" }],
+);
+
+add(
+  {
+    clientes: "padres de familia",
+    busqueda: "escuela",
+    accion: "elegir",
+    lugar: "plantel",
+    accionCorta: "pedir informes",
+    ejemploBlog: "¿Cuánto cuesta la colegiatura de una escuela en {{ciudad}}?",
+  },
+  ["escuela"],
+);
+
+add(
+  {
+    clientes: "padres de familia",
+    busqueda: "colegio",
+    accion: "elegir",
+    lugar: "plantel",
+    accionCorta: "pedir informes",
+    ejemploBlog: "¿Cómo elegir colegio en {{ciudad}}?",
+  },
+  ["colegio"],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "fotógrafo",
+    accion: "contratar",
+    lugar: "estudio",
+    accionCorta: "cotizar",
+    ejemploBlog: "¿Cuánto cuesta un fotógrafo para una boda en {{ciudad}}?",
+  },
+  [
+    "fotógrafo",
+    { key: "fotógrafa", busqueda: "fotógrafa" },
+    { key: "fotografía", busqueda: "fotógrafo" },
+    { key: "estudio fotográfico", busqueda: "fotógrafo" },
+  ],
+);
+
+export function knownSectorKeys(): readonly string[] {
+  return [...SECTORS.keys()];
+}
+
+export function normalizeSectorKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Copy for a specialty, or a generic fallback that quotes the typed giro. */
+export function resolveSector(specialty: string): SectorCopy {
+  const normalized = normalizeSectorKey(specialty);
+  if (!normalized) return genericSector(specialty);
+
+  const exact = SECTORS.get(normalized);
+  if (exact) return exact;
+
+  const singular = singularizePhrase(normalized);
+  if (singular !== normalized) {
+    const pluralHit = SECTORS.get(singular);
+    if (pluralHit) return pluralHit;
+  }
+
+  const contained =
+    longestContained(normalized) ??
+    (singular !== normalized ? longestContained(singular) : undefined);
+  if (contained) return contained;
+
+  return genericSector(specialty);
+}
+
+export function applyCity(template: string, city: string): string {
+  const trimmed = city.trim();
+  if (!trimmed) {
+    return template
+      .replace(/\s+en\s+\{\{\s*ciudad\s*\}\}/gi, "")
+      .replace(/\{\{\s*ciudad\s*\}\}/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+  return template.replace(/\{\{\s*ciudad\s*\}\}/gi, trimmed);
+}
+
+function genericSector(specialty: string): SectorCopy {
+  const giro = displayGiro(specialty);
+  return {
+    clientes: "clientes",
+    busqueda: giro,
+    accion: "contactar",
+    lugar: "negocio",
+    accionCorta: "contactar",
+    ejemploBlog: `5 cosas que debe saber antes de contratar ${articleFor(giro)} ${giro} en {{ciudad}}`,
+  };
+}
+
+function displayGiro(specialty: string): string {
+  const cleaned = specialty
+    .replace(/["“”«»]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "negocio";
+}
+
+/** "un" / "una" for the generic article title. Common-gender -ista stays "un". */
+function articleFor(giro: string): "un" | "una" {
+  const first = giro.split(" ")[0] ?? "";
+  const bare = normalizeSectorKey(first);
+  if (!bare || bare.endsWith("ista")) return "un";
+  if (bare.endsWith("a")) return "una";
+  return "un";
+}
+
+function longestContained(phrase: string): SectorCopy | undefined {
+  let bestKey = "";
+  let best: SectorCopy | undefined;
+  for (const [key, copy] of SECTORS) {
+    if (EXACT_ONLY.has(key)) continue;
+    if (key.length <= bestKey.length) continue;
+    if (!containsWordPhrase(phrase, key)) continue;
+    bestKey = key;
+    best = copy;
+  }
+  return best;
+}
+
+function containsWordPhrase(haystack: string, phrase: string): boolean {
+  if (!phrase) return false;
+  let from = 0;
+  while (from <= haystack.length - phrase.length) {
+    const index = haystack.indexOf(phrase, from);
+    if (index === -1) return false;
+    const beforeOk = index === 0 || haystack[index - 1] === " ";
+    const afterIndex = index + phrase.length;
+    const afterOk = afterIndex === haystack.length || haystack[afterIndex] === " ";
+    if (beforeOk && afterOk) return true;
+    from = index + 1;
+  }
+  return false;
+}
+
+function singularizePhrase(phrase: string): string {
+  return phrase.split(" ").map(singularizeWord).join(" ");
+}
+
+function singularizeWord(word: string): string {
+  if (word.length <= 3) return word;
+  if (word.endsWith("ces") && word.length > 4) {
+    return `${word.slice(0, -3)}z`;
+  }
+  if (word.endsWith("es") && word.length > 4) {
+    const before = word[word.length - 3];
+    if (before && !"aeiou".includes(before)) return word.slice(0, -2);
+  }
+  if (word.endsWith("s")) {
+    const before = word[word.length - 2];
+    if (before && "aeiou".includes(before)) return word.slice(0, -1);
+  }
+  return word;
+}

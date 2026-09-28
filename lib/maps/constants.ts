@@ -26,9 +26,26 @@ export const REASON_LABELS: Record<MapsLeadReason, string> = {
   solo_red_social: "Solo red social",
 };
 
-export const DEFAULT_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Estuve viendo {{nombre}} en Google ({{calificacion}} estrellas, {{reseñas}} reseñas) en {{ciudad}} y no encontré un sitio web del consultorio.
+/** Same amount for every giro. The previous template did not vary the price. */
+export const DEFAULT_OUTREACH_PRICE = "Desde $8,000 MXN";
 
-Hacemos landing pages para {{especialidad}}, alrededor de $8,000 MXN, para que los pacientes lo encuentren y puedan escribir por WhatsApp. ¿Le gustaría ver un ejemplo?`;
+/**
+ * Short first-contact message. Not stored: it is always rendered per giro.
+ * `{{apertura}}` is the stars/reviews clause, shortened when those numbers
+ * are missing.
+ */
+export const OPENING_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Vi {{nombre}} en Google Maps{{apertura}}Noté que no tiene página web y mucha gente busca "{{busqueda}} en {{ciudad}}" en Google antes de {{accion}}. ¿Le puedo mandar un ejemplo de cómo se vería la suya?`;
+
+/**
+ * Follow-up copy, saved in `maps_settings` when the operator customizes it.
+ * Sector tokens are filled per lead. `{{reputacion}}` is the stars/reviews
+ * clause. An external sample link is appended in code when that giro has one.
+ */
+export const DEFAULT_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Vi {{nombre}} en Google Maps{{reputacion}}Pero noté que no tiene sitio web, y muchos {{clientes}} buscan "{{busqueda}} en {{ciudad}}" en Google antes de {{accion}}.
+
+Le podemos hacer una página profesional donde muestre sus servicios, fotos de su {{lugar}} y trabajos, reseñas de {{clientes}} y un botón directo a WhatsApp para {{accion_corta}}. La dejamos optimizada para que Google la encuentre, y si le interesa, también escribimos artículos para su blog (por ejemplo, "{{ejemplo_blog}}") para que aparezca en más búsquedas de la zona.
+
+${DEFAULT_OUTREACH_PRICE}. ¿Le mando un ejemplo de cómo quedaría?`;
 
 export const TEMPLATE_TOKENS = [
   "{{nombre}}",
@@ -36,6 +53,13 @@ export const TEMPLATE_TOKENS = [
   "{{calificacion}}",
   "{{reseñas}}",
   "{{ciudad}}",
+  "{{reputacion}}",
+  "{{clientes}}",
+  "{{busqueda}}",
+  "{{accion}}",
+  "{{lugar}}",
+  "{{accion_corta}}",
+  "{{ejemplo_blog}}",
 ] as const;
 
 /** Successful Places searches allowed per user in a rolling hour. */
