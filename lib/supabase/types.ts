@@ -107,6 +107,47 @@ export type MapsSearchLog = {
   created_at: string;
 };
 
+/** Pipeline status for a Reddit web-dev prospect (`reddit_web_leads`). */
+export type RedditWebLeadEstado =
+  | "nuevo"
+  | "respondido"
+  | "contactado"
+  | "cotizado"
+  | "ganado"
+  | "descartado";
+
+/** Language the bot detected on the Reddit post. */
+export type RedditWebLeadIdioma = "es-MX" | "en-US";
+
+/**
+ * A Reddit post where someone asks for a website, landing page, or Roku app
+ * (`reddit_web_leads`). The external bot upserts content; the app user owns
+ * `estado` and `notas`.
+ */
+export type RedditWebLead = {
+  id: string;
+  user_id: string;
+  reddit_id: string;
+  url: string;
+  title: string;
+  subreddit: string;
+  author: string | null;
+  created_utc: string | null;
+  problema: string | null;
+  pais_detectado: string | null;
+  idioma: RedditWebLeadIdioma | null;
+  score_intencion: number | null;
+  intencion: string | null;
+  clasificador: string | null;
+  keywords: string[];
+  borrador_es: string | null;
+  borrador_en: string | null;
+  estado: RedditWebLeadEstado;
+  notas: string;
+  inserted_at: string;
+  updated_at: string;
+};
+
 /** A detected Reddit lead associated with a matched keyword (`detected_leads`). */
 export type DetectedLead = {
   id: string; // UUID
@@ -255,6 +296,30 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "maps_search_log_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      reddit_web_leads: {
+        Row: RedditWebLead;
+        Insert: Omit<
+          RedditWebLead,
+          "id" | "inserted_at" | "updated_at" | "estado" | "notas" | "keywords"
+        > & {
+          id?: string;
+          inserted_at?: string;
+          updated_at?: string;
+          estado?: RedditWebLeadEstado;
+          notas?: string;
+          keywords?: string[];
+        };
+        Update: Partial<RedditWebLead>;
+        Relationships: [
+          {
+            foreignKeyName: "reddit_web_leads_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "users";
