@@ -90,9 +90,59 @@ describe("default outreach message", () => {
     assert.match(text, /¿Cuánto cobra un abogado por un divorcio en Guadalajara\?/);
     assert.match(text, /Desde \$8,000 MXN/);
     assert.equal(text.includes("pacientes"), false);
-    assert.equal(text.includes("Aquí un ejemplo"), false);
+    assert.match(
+      text,
+      /Aquí un ejemplo: https:\/\/torioweb\.com\/ejemplos\/abogado\/\?nombre=Despacho%20Ram%C3%ADrez$/,
+    );
     assert.equal(text.includes("ranking"), false);
     assert.equal(text.includes("primera página"), false);
+  });
+
+  it("arma el seguimiento de cocinas integrales en Querétaro", () => {
+    const text = buildDefaultLeadMessage(
+      lead({
+        name: "Cocinas Integrales del Bajío",
+        specialty: "cocinas integrales",
+        city: "Querétaro",
+        rating: 4.8,
+        userRatingCount: 64,
+      }),
+    );
+    assert.equal(
+      text,
+      [
+        'Hola, le escribo de Torio Web. Vi Cocinas Integrales del Bajío en Google Maps: 4.8 estrellas con 64 reseñas, ¡muy buena reputación! Pero noté que no tiene sitio web, y muchos clientes buscan "cocinas integrales en Querétaro" en Google antes de contratar.',
+        "",
+        'Le podemos hacer una página profesional donde muestre sus servicios, fotos de su taller y trabajos, reseñas de clientes y un botón directo a WhatsApp para cotizar. La dejamos optimizada para que Google la encuentre, y si le interesa, también escribimos artículos para su blog (por ejemplo, "¿Cuánto cuesta una cocina integral en Querétaro?") para que aparezca en más búsquedas de la zona.',
+        "",
+        "Desde $8,000 MXN. ¿Le mando un ejemplo de cómo quedaría?",
+        "",
+        "Aquí un ejemplo: https://torioweb.com/ejemplos/cocinas/?nombre=Cocinas%20Integrales%20del%20Baj%C3%ADo",
+      ].join("\n"),
+    );
+  });
+
+  it("arma el seguimiento de un bufete en Querétaro", () => {
+    const text = buildDefaultLeadMessage(
+      lead({
+        name: "Bufete García y Asociados",
+        specialty: "bufete",
+        city: "Querétaro",
+        rating: 4.6,
+        userRatingCount: 41,
+      }),
+    );
+    assert.match(
+      text,
+      /muchos clientes buscan "bufete en Querétaro" en Google antes de consultar/,
+    );
+    assert.match(text, /fotos de su despacho y trabajos/);
+    assert.match(text, /¿Cuánto cobra un abogado por un divorcio en Querétaro\?/);
+    assert.match(
+      text,
+      /Aquí un ejemplo: https:\/\/torioweb\.com\/ejemplos\/abogado\/\?nombre=Bufete%20Garc%C3%ADa%20y%20Asociados$/,
+    );
+    assert.equal(text.includes("pacientes"), false);
   });
 
   it("arma el texto de un restaurante", () => {
@@ -112,6 +162,8 @@ describe("default outreach message", () => {
     assert.match(text, /fotos de su local y trabajos, reseñas de comensales/);
     assert.match(text, /WhatsApp para reservar/);
     assert.match(text, /¿Dónde comer en familia en Monterrey\?/);
+    assert.equal(text.includes("Aquí un ejemplo"), false);
+    assert.equal(text.includes("torioweb.com"), false);
   });
 
   it("usa un fallback genérico y concuerda un/una", () => {
@@ -269,6 +321,66 @@ describe("sector matching", () => {
     assert.equal(resolveSector("fotógrafas").busqueda, "fotógrafa");
     assert.equal(resolveSector("veterinarias").clientes, "dueños de mascotas");
     assert.equal(resolveSector("contadoras").lugar, "despacho");
+    assert.equal(resolveSector("ortodoncistas").demoSlug, "dentista");
+    assert.equal(resolveSector("ortodoncia").demoSlug, "dentista");
+    assert.equal(resolveSector("carpinterías").demoSlug, "cocinas");
+    assert.equal(resolveSector("carpinterías").busqueda, "carpintería");
+    assert.equal(resolveSector("carpinteros").busqueda, "carpintero");
+    assert.equal(resolveSector("cocinas integrales").demoSlug, "cocinas");
+    assert.equal(resolveSector("cocinas integrales").busqueda, "cocinas integrales");
+    assert.equal(resolveSector("cocinas").demoSlug, "cocinas");
+    assert.equal(resolveSector("muebles a medida").demoSlug, "cocinas");
+    assert.equal(resolveSector("muebles a medida").busqueda, "muebles a medida");
+    assert.equal(resolveSector("closets").demoSlug, "cocinas");
+    assert.equal(resolveSector("closet").busqueda, "closets");
+    assert.equal(resolveSector("mueblerías").demoSlug, "cocinas");
+    assert.equal(resolveSector("tiendas de muebles").demoSlug, "cocinas");
+    assert.equal(resolveSector("tiendas de muebles").busqueda, "tienda de muebles");
+    assert.equal(resolveSector("abogados").demoSlug, "abogado");
+    assert.equal(resolveSector("bufetes").demoSlug, "abogado");
+    assert.equal(resolveSector("bufetes jurídicos").busqueda, "bufete jurídico");
+    assert.equal(resolveSector("despachos jurídicos").demoSlug, "abogado");
+    assert.equal(resolveSector("despachos jurídicos").busqueda, "abogado");
+    assert.equal(resolveSector("notarías").demoSlug, undefined);
+    assert.equal(resolveSector("notario público").demoSlug, undefined);
+    assert.equal(resolveSector("notaría").busqueda, "notaría");
+    assert.equal(resolveSector("restaurante").demoSlug, undefined);
+    assert.equal(resolveSector("cocina económica").demoSlug, undefined);
+    assert.equal(resolveSector("cocinas económicas").demoSlug, undefined);
+  });
+
+  it("agrega el demo dental al seguimiento de un ortodoncista", () => {
+    const text = buildDefaultLeadMessage(
+      lead({
+        name: "Ortodoncia Sonrisas",
+        specialty: "ortodoncista",
+        city: "Querétaro",
+        rating: 4.8,
+        userRatingCount: 90,
+      }),
+    );
+    assert.match(text, /buscan "ortodoncista en Querétaro"/);
+    assert.match(text, /¿Cuánto cuestan los brackets en Querétaro\?/);
+    assert.match(
+      text,
+      /Aquí un ejemplo: https:\/\/torioweb\.com\/ejemplos\/dentista\/\?nombre=Ortodoncia%20Sonrisas$/,
+    );
+  });
+
+  it("no manda ejemplo a una notaría", () => {
+    const text = buildDefaultLeadMessage(
+      lead({
+        name: "Notaría 12",
+        specialty: "notaría",
+        city: "Querétaro",
+        rating: 4.5,
+        userRatingCount: 18,
+      }),
+    );
+    assert.match(text, /buscan "notaría en Querétaro"/);
+    assert.equal(text.includes("Aquí un ejemplo"), false);
+    assert.equal(text.includes("torioweb.com"), false);
+    assert.equal(text.includes("divorcio"), false);
   });
 
   it("no confunde un salón de eventos ni un taller de costura con otro giro", () => {
