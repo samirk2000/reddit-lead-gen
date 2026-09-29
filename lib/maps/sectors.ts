@@ -74,6 +74,7 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuestan los brackets en {{ciudad}}?",
+    demoSlug: "dentista",
   },
   ["ortodoncista", { key: "ortodoncia", busqueda: "ortodoncia" }],
 );
@@ -229,11 +230,14 @@ add(
     lugar: "despacho",
     accionCorta: "consultar",
     ejemploBlog: "¿Cuánto cobra un abogado por un divorcio en {{ciudad}}?",
+    demoSlug: "abogado",
   },
   [
     "abogado",
     { key: "abogada", busqueda: "abogada" },
     { key: "despacho jurídico", busqueda: "abogado" },
+    { key: "bufete", busqueda: "bufete" },
+    { key: "bufete jurídico", busqueda: "bufete jurídico" },
   ],
 );
 
@@ -363,6 +367,29 @@ add(
 
 add(
   {
+    clientes: "clientes",
+    busqueda: "carpintería",
+    accion: "contratar",
+    lugar: "taller",
+    accionCorta: "cotizar",
+    ejemploBlog: "¿Cuánto cuesta una cocina integral en {{ciudad}}?",
+    demoSlug: "cocinas",
+  },
+  [
+    "carpintería",
+    { key: "carpintero", busqueda: "carpintero" },
+    { key: "cocina integral", busqueda: "cocinas integrales" },
+    { key: "cocinas", busqueda: "cocinas", exactOnly: true },
+    { key: "mueble a medida", busqueda: "muebles a medida" },
+    { key: "closet", busqueda: "closets" },
+    { key: "closets", busqueda: "closets" },
+    { key: "mueblería", busqueda: "mueblería" },
+    { key: "tienda de mueble", busqueda: "tienda de muebles" },
+  ],
+);
+
+add(
+  {
     clientes: "personas",
     busqueda: "inmobiliaria",
     accion: "comprar o rentar",
@@ -443,9 +470,17 @@ export function resolveSector(specialty: string): SectorCopy {
     if (pluralHit) return pluralHit;
   }
 
+  // "muebles" / "bufetes" are -e stems. The -es chop turns them into "muebl" / "bufet".
+  const eStem = eStemSingularPhrase(normalized);
+  if (eStem !== normalized && eStem !== singular) {
+    const eStemHit = SECTORS.get(eStem);
+    if (eStemHit) return eStemHit;
+  }
+
   const contained =
     longestContained(normalized) ??
-    (singular !== normalized ? longestContained(singular) : undefined);
+    (singular !== normalized ? longestContained(singular) : undefined) ??
+    (eStem !== normalized && eStem !== singular ? longestContained(eStem) : undefined);
   if (contained) return contained;
 
   return genericSector(specialty);
@@ -522,6 +557,23 @@ function containsWordPhrase(haystack: string, phrase: string): boolean {
 
 function singularizePhrase(phrase: string): string {
   return phrase.split(" ").map(singularizeWord).join(" ");
+}
+
+/**
+ * Singular for a stem that already ends in "e" (mueble, bufete).
+ * Words the -es rule already singularizes correctly (taller, integral) stay
+ * on `singularizeWord`; this is only the fallback.
+ */
+function eStemSingularPhrase(phrase: string): string {
+  return phrase.split(" ").map(eStemSingularWord).join(" ");
+}
+
+function eStemSingularWord(word: string): string {
+  const primary = singularizeWord(word);
+  if (word.length > 4 && word.endsWith("es") && primary === word.slice(0, -2)) {
+    return word.slice(0, -1);
+  }
+  return primary;
 }
 
 function singularizeWord(word: string): string {

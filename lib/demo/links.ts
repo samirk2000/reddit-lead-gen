@@ -6,6 +6,8 @@ export const DEFAULT_DEMOS_BASE_URL = "https://torioweb.com/ejemplos";
 
 const DEMO_PATH_BY_SLUG: Readonly<Record<string, string>> = {
   dentista: "dentista",
+  cocinas: "cocinas",
+  abogado: "abogado",
 };
 
 export function demosBaseUrl(): string {

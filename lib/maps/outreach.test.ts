@@ -44,13 +44,11 @@ describe("default outreach message", () => {
     assert.equal(
       text,
       [
-        'Hola, le escribo de Torio Web. Vi ODONTOLOGIA FAMILIAR ESPECIALIZADA en Google Maps: 4.9 estrellas con 157 reseñas, ¡muy buena reputación! Pero noté que no tiene sitio web, y muchos pacientes buscan "dentista en Querétaro" en Google antes de agendar.',
+        "¡Gracias por su respuesta!",
         "",
         'Le podemos hacer una página profesional donde muestre sus servicios, fotos de su consultorio y trabajos, reseñas de pacientes y un botón directo a WhatsApp para agendar. La dejamos optimizada para que Google la encuentre, y si le interesa, también escribimos artículos para su blog (por ejemplo, "¿Cuánto cuesta un blanqueamiento en Querétaro?") para que aparezca en más búsquedas de la zona.',
         "",
-        "Desde $8,000 MXN. ¿Le mando un ejemplo de cómo quedaría?",
-        "",
-        "Aquí un ejemplo: https://torioweb.com/ejemplos/dentista/?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA",
+        "Desde $8,000 MXN. Aquí puede ver un ejemplo de cómo quedaría la suya: https://torioweb.com/ejemplos/dentista/?nombre=ODONTOLOGIA%20FAMILIAR%20ESPECIALIZADA",
       ].join("\n"),
     );
   });
@@ -83,16 +81,63 @@ describe("default outreach message", () => {
         userRatingCount: 86,
       }),
     );
-    assert.match(text, /Vi Despacho Ramírez en Google Maps: 4\.7 estrellas con 86 reseñas/);
-    assert.match(text, /muchos clientes buscan "abogado en Guadalajara" en Google antes de consultar/);
+    assert.match(text, /^¡Gracias por su respuesta!/);
+    assert.equal(text.includes("Google Maps"), false);
     assert.match(text, /fotos de su despacho y trabajos, reseñas de clientes/);
     assert.match(text, /botón directo a WhatsApp para consultar/);
     assert.match(text, /¿Cuánto cobra un abogado por un divorcio en Guadalajara\?/);
-    assert.match(text, /Desde \$8,000 MXN/);
+    assert.match(
+      text,
+      /Desde \$8,000 MXN\. Aquí puede ver un ejemplo de cómo quedaría la suya: https:\/\/torioweb\.com\/ejemplos\/abogado\/\?nombre=Despacho%20Ram%C3%ADrez$/,
+    );
     assert.equal(text.includes("pacientes"), false);
-    assert.equal(text.includes("Aquí un ejemplo"), false);
+    assert.equal(text.includes("¿Le mando un ejemplo"), false);
     assert.equal(text.includes("ranking"), false);
     assert.equal(text.includes("primera página"), false);
+  });
+
+  it("arma el seguimiento de cocinas integrales en Querétaro", () => {
+    const text = buildDefaultLeadMessage(
+      lead({
+        name: "Cocinas Integrales del Bajío",
+        specialty: "cocinas integrales",
+        city: "Querétaro",
+        rating: 4.8,
+        userRatingCount: 64,
+      }),
+    );
+    assert.equal(
+      text,
+      [
+        "¡Gracias por su respuesta!",
+        "",
+        'Le podemos hacer una página profesional donde muestre sus servicios, fotos de su taller y trabajos, reseñas de clientes y un botón directo a WhatsApp para cotizar. La dejamos optimizada para que Google la encuentre, y si le interesa, también escribimos artículos para su blog (por ejemplo, "¿Cuánto cuesta una cocina integral en Querétaro?") para que aparezca en más búsquedas de la zona.',
+        "",
+        "Desde $8,000 MXN. Aquí puede ver un ejemplo de cómo quedaría la suya: https://torioweb.com/ejemplos/cocinas/?nombre=Cocinas%20Integrales%20del%20Baj%C3%ADo",
+      ].join("\n"),
+    );
+  });
+
+  it("arma el seguimiento de un bufete en Querétaro", () => {
+    const text = buildDefaultLeadMessage(
+      lead({
+        name: "Bufete García y Asociados",
+        specialty: "bufete",
+        city: "Querétaro",
+        rating: 4.6,
+        userRatingCount: 41,
+      }),
+    );
+    assert.match(text, /^¡Gracias por su respuesta!/);
+    assert.equal(text.includes("Google Maps"), false);
+    assert.match(text, /fotos de su despacho y trabajos/);
+    assert.match(text, /¿Cuánto cobra un abogado por un divorcio en Querétaro\?/);
+    assert.match(
+      text,
+      /Aquí puede ver un ejemplo de cómo quedaría la suya: https:\/\/torioweb\.com\/ejemplos\/abogado\/\?nombre=Bufete%20Garc%C3%ADa%20y%20Asociados$/,
+    );
+    assert.equal(text.includes("¿Le mando un ejemplo"), false);
+    assert.equal(text.includes("pacientes"), false);
   });
 
   it("arma el texto de un restaurante", () => {
@@ -105,13 +150,16 @@ describe("default outreach message", () => {
         userRatingCount: 320,
       }),
     );
-    assert.match(
-      text,
-      /muchos comensales buscan "restaurante en Monterrey" en Google antes de reservar/,
-    );
+    assert.match(text, /^¡Gracias por su respuesta!/);
+    assert.equal(text.includes("Google Maps"), false);
     assert.match(text, /fotos de su local y trabajos, reseñas de comensales/);
     assert.match(text, /WhatsApp para reservar/);
     assert.match(text, /¿Dónde comer en familia en Monterrey\?/);
+    assert.match(text, /Desde \$8,000 MXN\. Si gusta, le preparo una propuesta para su negocio\.$/);
+    assert.equal(text.includes("Aquí un ejemplo"), false);
+    assert.equal(text.includes("Aquí puede ver un ejemplo"), false);
+    assert.equal(text.includes("torioweb.com"), false);
+    assert.equal(text.includes("¿Le mando un ejemplo"), false);
   });
 
   it("usa un fallback genérico y concuerda un/una", () => {
@@ -124,16 +172,14 @@ describe("default outreach message", () => {
         userRatingCount: 41,
       }),
     );
-    assert.match(
-      florist,
-      /muchos clientes buscan "florería en Puebla" en Google antes de contactar/,
-    );
+    assert.match(florist, /^¡Gracias por su respuesta!/);
     assert.match(florist, /fotos de su negocio y trabajos, reseñas de clientes/);
     assert.match(florist, /WhatsApp para contactar/);
     assert.match(
       florist,
       /5 cosas que debe saber antes de contratar una florería en Puebla/,
     );
+    assert.match(florist, /Si gusta, le preparo una propuesta para su negocio\.$/);
 
     const locksmith = buildDefaultLeadMessage(
       lead({
@@ -148,7 +194,7 @@ describe("default outreach message", () => {
       locksmith,
       /5 cosas que debe saber antes de contratar un cerrajero en León/,
     );
-    assert.match(locksmith, /buscan "cerrajero en León"/);
+    assert.match(locksmith, /Si gusta, le preparo una propuesta para su negocio\.$/);
   });
 
   it("no pisa una plantilla ya guardada", () => {
@@ -175,9 +221,10 @@ describe("reputation clause", () => {
     specialty: "dentista",
     city: "Querétaro",
   });
+  const snippet = "Vi {{nombre}} en Google Maps{{reputacion}}Pero noté";
 
   it("omite estrellas y reseñas cuando faltan", () => {
-    const text = buildDefaultLeadMessage({
+    const text = renderLeadMessage(snippet, {
       ...base,
       rating: null,
       userRatingCount: null,
@@ -191,7 +238,7 @@ describe("reputation clause", () => {
   });
 
   it("deja solo las reseñas si no hay calificación", () => {
-    const text = buildDefaultLeadMessage({
+    const text = renderLeadMessage(snippet, {
       ...base,
       rating: null,
       userRatingCount: 12,
@@ -202,7 +249,7 @@ describe("reputation clause", () => {
   });
 
   it("deja solo las estrellas si no hay reseñas", () => {
-    const text = buildDefaultLeadMessage({
+    const text = renderLeadMessage(snippet, {
       ...base,
       rating: 4.9,
       userRatingCount: null,
@@ -213,7 +260,7 @@ describe("reputation clause", () => {
   });
 
   it("no llama buena reputación a una calificación baja", () => {
-    const text = buildDefaultLeadMessage({
+    const text = renderLeadMessage(snippet, {
       ...base,
       rating: 3.2,
       userRatingCount: 40,
@@ -223,7 +270,7 @@ describe("reputation clause", () => {
   });
 
   it("usa el singular con una reseña", () => {
-    const text = buildDefaultLeadMessage({
+    const text = renderLeadMessage(snippet, {
       ...base,
       rating: 4,
       userRatingCount: 1,
@@ -269,6 +316,72 @@ describe("sector matching", () => {
     assert.equal(resolveSector("fotógrafas").busqueda, "fotógrafa");
     assert.equal(resolveSector("veterinarias").clientes, "dueños de mascotas");
     assert.equal(resolveSector("contadoras").lugar, "despacho");
+    assert.equal(resolveSector("ortodoncistas").demoSlug, "dentista");
+    assert.equal(resolveSector("ortodoncia").demoSlug, "dentista");
+    assert.equal(resolveSector("carpinterías").demoSlug, "cocinas");
+    assert.equal(resolveSector("carpinterías").busqueda, "carpintería");
+    assert.equal(resolveSector("carpinteros").busqueda, "carpintero");
+    assert.equal(resolveSector("cocinas integrales").demoSlug, "cocinas");
+    assert.equal(resolveSector("cocinas integrales").busqueda, "cocinas integrales");
+    assert.equal(resolveSector("cocinas").demoSlug, "cocinas");
+    assert.equal(resolveSector("muebles a medida").demoSlug, "cocinas");
+    assert.equal(resolveSector("muebles a medida").busqueda, "muebles a medida");
+    assert.equal(resolveSector("closets").demoSlug, "cocinas");
+    assert.equal(resolveSector("closet").busqueda, "closets");
+    assert.equal(resolveSector("mueblerías").demoSlug, "cocinas");
+    assert.equal(resolveSector("tiendas de muebles").demoSlug, "cocinas");
+    assert.equal(resolveSector("tiendas de muebles").busqueda, "tienda de muebles");
+    assert.equal(resolveSector("abogados").demoSlug, "abogado");
+    assert.equal(resolveSector("bufetes").demoSlug, "abogado");
+    assert.equal(resolveSector("bufetes jurídicos").busqueda, "bufete jurídico");
+    assert.equal(resolveSector("despachos jurídicos").demoSlug, "abogado");
+    assert.equal(resolveSector("despachos jurídicos").busqueda, "abogado");
+    assert.equal(resolveSector("notarías").demoSlug, undefined);
+    assert.equal(resolveSector("notario público").demoSlug, undefined);
+    assert.equal(resolveSector("notaría").busqueda, "notaría");
+    assert.equal(resolveSector("restaurante").demoSlug, undefined);
+    assert.equal(resolveSector("cocina económica").demoSlug, undefined);
+    assert.equal(resolveSector("cocinas económicas").demoSlug, undefined);
+  });
+
+  it("agrega el demo dental al seguimiento de un ortodoncista", () => {
+    const text = buildDefaultLeadMessage(
+      lead({
+        name: "Ortodoncia Sonrisas",
+        specialty: "ortodoncista",
+        city: "Querétaro",
+        rating: 4.8,
+        userRatingCount: 90,
+      }),
+    );
+    assert.match(text, /^¡Gracias por su respuesta!/);
+    assert.equal(text.includes("Google Maps"), false);
+    assert.match(text, /¿Cuánto cuestan los brackets en Querétaro\?/);
+    assert.match(
+      text,
+      /Aquí puede ver un ejemplo de cómo quedaría la suya: https:\/\/torioweb\.com\/ejemplos\/dentista\/\?nombre=Ortodoncia%20Sonrisas$/,
+    );
+    assert.equal(text.includes("¿Le mando un ejemplo"), false);
+  });
+
+  it("no manda ejemplo a una notaría", () => {
+    const text = buildDefaultLeadMessage(
+      lead({
+        name: "Notaría 12",
+        specialty: "notaría",
+        city: "Querétaro",
+        rating: 4.5,
+        userRatingCount: 18,
+      }),
+    );
+    assert.match(text, /^¡Gracias por su respuesta!/);
+    assert.match(text, /una notaría en Querétaro/);
+    assert.match(text, /Si gusta, le preparo una propuesta para su negocio\.$/);
+    assert.equal(text.includes("Aquí un ejemplo"), false);
+    assert.equal(text.includes("Aquí puede ver un ejemplo"), false);
+    assert.equal(text.includes("torioweb.com"), false);
+    assert.equal(text.includes("divorcio"), false);
+    assert.equal(text.includes("Google Maps"), false);
   });
 
   it("no confunde un salón de eventos ni un taller de costura con otro giro", () => {
@@ -311,8 +424,13 @@ describe("sector matching", () => {
         userRatingCount: 10,
       }),
     );
-    assert.match(text, /buscan "dentista" en Google antes de agendar/);
+    assert.match(text, /^¡Gracias por su respuesta!/);
     assert.match(text, /¿Cuánto cuesta un blanqueamiento\?/);
+    assert.match(
+      text,
+      /Aquí puede ver un ejemplo de cómo quedaría la suya: https:\/\/torioweb\.com\/ejemplos\/dentista\/\?nombre=Cl%C3%ADnica%20%C3%81rbol$/,
+    );
+    assert.equal(text.includes("Google Maps"), false);
     assert.equal(text.includes("{{"), false);
   });
 });
@@ -354,6 +472,43 @@ describe("opening and saved template", () => {
     const opening = buildOpeningMessage(dentist);
     assert.match(opening, /¿Le puedo mandar un ejemplo/);
     assert.equal(opening.includes("Estuve viendo"), false);
+    assert.equal(followUp.includes("¡Gracias por su respuesta!"), false);
+    assert.match(followUp, /¿Le gustaría ver un ejemplo\?/);
+  });
+
+  it("cierra el texto de Torio Web una sola vez aunque la pantalla lo pase como plantilla", () => {
+    const dentistLead = lead({
+      name: "ODONTOLOGIA FAMILIAR ESPECIALIZADA",
+      specialty: "dentista",
+      city: "Querétaro",
+      rating: 4.9,
+      userRatingCount: 157,
+    });
+    const text = buildFollowUpMessage(dentistLead, {
+      template: DEFAULT_WHATSAPP_TEMPLATE,
+    });
+    assert.equal(text, buildDefaultLeadMessage(dentistLead));
+    assert.equal(text.split("ejemplos/dentista").length - 1, 1);
+    assert.equal(text.includes("¿Le mando un ejemplo"), false);
+    assert.equal(text.includes("Aquí un ejemplo:"), false);
+  });
+
+  it("no ofrece propuesta ni reescribe una plantilla guardada sin demo", () => {
+    const text = buildFollowUpMessage(
+      lead({
+        name: "La Parrilla del Centro",
+        specialty: "restaurante",
+        city: "Monterrey",
+        rating: 4.6,
+        userRatingCount: 320,
+      }),
+      { template: OLD_TEMPLATE },
+    );
+    assert.match(text, /Estuve viendo La Parrilla del Centro/);
+    assert.match(text, /¿Le gustaría ver un ejemplo\?/);
+    assert.equal(text.includes("¡Gracias por su respuesta!"), false);
+    assert.equal(text.includes("propuesta para su negocio"), false);
+    assert.equal(text.includes("Aquí un ejemplo"), false);
   });
 
   it("no duplica el enlace si la plantilla ya trae el demo", () => {
