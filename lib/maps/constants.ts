@@ -38,14 +38,16 @@ export const OPENING_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Vi {{no
 
 /**
  * Follow-up copy, saved in `maps_settings` when the operator customizes it.
- * Sector tokens are filled per lead. `{{reputacion}}` is the stars/reviews
- * clause. An external sample link is appended in code when that giro has one.
+ * Sent after the prospect accepts the opening, so it thanks them and describes
+ * the page. It does not repeat the Google Maps greeting.
+ * `{{cierre}}` is the example link when this giro has one, or an offer to
+ * prepare a proposal when it does not. A saved custom template is left as-is.
  */
-export const DEFAULT_WHATSAPP_TEMPLATE = `Hola, le escribo de Torio Web. Vi {{nombre}} en Google Maps{{reputacion}}Pero noté que no tiene sitio web, y muchos {{clientes}} buscan "{{busqueda}} en {{ciudad}}" en Google antes de {{accion}}.
+export const DEFAULT_WHATSAPP_TEMPLATE = `¡Gracias por su respuesta!
 
 Le podemos hacer una página profesional donde muestre sus servicios, fotos de su {{lugar}} y trabajos, reseñas de {{clientes}} y un botón directo a WhatsApp para {{accion_corta}}. La dejamos optimizada para que Google la encuentre, y si le interesa, también escribimos artículos para su blog (por ejemplo, "{{ejemplo_blog}}") para que aparezca en más búsquedas de la zona.
 
-${DEFAULT_OUTREACH_PRICE}. ¿Le mando un ejemplo de cómo quedaría?`;
+${DEFAULT_OUTREACH_PRICE}. {{cierre}}`;
 
 export const TEMPLATE_TOKENS = [
   "{{nombre}}",
@@ -60,6 +62,7 @@ export const TEMPLATE_TOKENS = [
   "{{lugar}}",
   "{{accion_corta}}",
   "{{ejemplo_blog}}",
+  "{{cierre}}",
 ] as const;
 
 /** Successful Places searches allowed per user in a rolling hour. */

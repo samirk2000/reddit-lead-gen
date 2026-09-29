@@ -361,9 +361,11 @@ export function MapsPanel({
                 Esta plantilla es la que se guarda. El mensaje de apertura es
                 corto, cambia según el giro y no se edita aquí. Tokens:{" "}
                 {TEMPLATE_TOKENS.join(", ")}. {"{{reputacion}}"} resume estrellas
-                y reseñas, y se acorta si faltan. Si el giro tiene página de
-                ejemplo, el seguimiento agrega el enlace al final. El botón de
-                WhatsApp solo abre el chat; no envía nada.
+                y reseñas, y se acorta si faltan. {"{{cierre}}"} es el final del
+                texto de Torio Web: el enlace del ejemplo, o una propuesta si
+                ese giro no tiene página. En una plantilla propia, si el giro
+                tiene ejemplo y el texto no lo incluye, el enlace se agrega al
+                final. El botón de WhatsApp solo abre el chat; no envía nada.
               </p>
             </div>
             <div className="space-y-2">

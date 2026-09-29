@@ -34,6 +34,7 @@ export function renderLeadMessage(template: string, lead: MessageLead): string {
     accion_corta: sector.accionCorta,
     ejemplo_blog: applyCity(sector.ejemploBlog, city),
     demo_url: demoLinkForLead(lead) ?? "",
+    cierre: followUpClosing(lead),
   };
 
   return source.replace(TOKEN_RE, (token) => {
@@ -49,8 +50,9 @@ export function buildOpeningMessage(lead: MessageLead): string {
 
 /**
  * Longer follow-up. `template` is the saved custom copy when the operator
- * has one; otherwise the Torio default. An external sample URL is appended
- * when this giro has one and the template did not already include it.
+ * has one; otherwise the Torio default. A custom template is rendered as
+ * saved. An external sample URL is appended when this giro has one and the
+ * template did not already include it.
  */
 export function buildFollowUpMessage(
   lead: MessageLead,
@@ -77,6 +79,13 @@ export function demoLinkForLead(lead: MessageLead): string | null {
   const slug = resolveSector(lead.specialty).demoSlug;
   if (!slug) return null;
   return externalDemoUrl(slug, lead.name);
+}
+
+/** Closing sentence of the default follow-up, after the price. */
+function followUpClosing(lead: MessageLead): string {
+  const url = demoLinkForLead(lead);
+  if (!url) return "Si gusta, le preparo una propuesta para su negocio.";
+  return `Aquí puede ver un ejemplo de cómo quedaría la suya: ${url}`;
 }
 
 export function whatsAppHref(e164: string, message: string): string {
