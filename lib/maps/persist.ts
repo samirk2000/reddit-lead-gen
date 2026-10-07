@@ -1,18 +1,20 @@
 import type { MapsLeadDraft } from "@/lib/maps/types";
-import type { Database } from "@/lib/supabase/types";
+import type { Database, MapsLeadStatus } from "@/lib/supabase/types";
 
 export type MapsLeadInsert = Database["public"]["Tables"]["maps_leads"]["Insert"];
 
 /**
- * Row written on search. status and notes are omitted on purpose: Postgres
- * keeps the existing values when those columns are not in the upsert payload.
+ * Row written on search. notes are omitted on purpose: Postgres keeps the
+ * existing value when that column is not in the upsert payload. status is
+ * omitted unless the caller passes one (the daily list marks enviado_a_lista).
  */
 export function leadDraftToInsert(
   userId: string,
   draft: MapsLeadDraft,
   seenAt: string,
+  status?: MapsLeadStatus,
 ): MapsLeadInsert {
-  return {
+  const row: MapsLeadInsert = {
     user_id: userId,
     place_id: draft.placeId,
     name: draft.name,
@@ -31,4 +33,6 @@ export function leadDraftToInsert(
     priority_score: draft.priorityScore,
     last_seen_at: seenAt,
   };
+  if (status) row.status = status;
+  return row;
 }

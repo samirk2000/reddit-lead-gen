@@ -2,6 +2,7 @@ import type { MapsLeadReason, MapsLeadStatus } from "@/lib/supabase/types";
 
 export const MAPS_LEAD_STATUSES = [
   "nuevo",
+  "enviado_a_lista",
   "contactado",
   "respondió",
   "cerrado",
@@ -42,6 +43,7 @@ export type MapsSearchStats = {
 export type MapsSearchSummary = MapsSearchStats & {
   query: string;
   pages: number;
+  alreadySaved: number;
 };
 
 /** Subset of a Places API (New) Text Search place. */

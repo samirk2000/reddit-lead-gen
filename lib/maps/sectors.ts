@@ -21,6 +21,11 @@ export type SectorCopy = {
   ejemploBlog: string;
   /** Key into the external sample-page map, when this giro has one. */
   demoSlug?: string;
+  /**
+   * 0–100 ticket score from the Mexico market study.
+   * Higher means the giro is a better fit for a page from $8,000 MXN.
+   */
+  marketScore: number;
 };
 
 type SectorKey = string | { key: string; busqueda: string; exactOnly?: boolean };
@@ -55,6 +60,7 @@ add(
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta un blanqueamiento en {{ciudad}}?",
     demoSlug: "dentista",
+    marketScore: 89,
   },
   [
     "dentista",
@@ -63,6 +69,8 @@ add(
     { key: "odontología", busqueda: "odontología" },
     { key: "clínica dental", busqueda: "clínica dental" },
     { key: "consultorio dental", busqueda: "consultorio dental" },
+    { key: "implantes dentales", busqueda: "implantes dentales" },
+    { key: "implante dental", busqueda: "implantes dentales" },
   ],
 );
 
@@ -75,6 +83,7 @@ add(
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuestan los brackets en {{ciudad}}?",
     demoSlug: "dentista",
+    marketScore: 89,
   },
   ["ortodoncista", { key: "ortodoncia", busqueda: "ortodoncia" }],
 );
@@ -87,6 +96,7 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta un tratamiento para el acné en {{ciudad}}?",
+    marketScore: 76,
   },
   [
     "dermatólogo",
@@ -104,11 +114,15 @@ add(
     accionCorta: "agendar",
     ejemploBlog:
       "¿Cuánto cuesta un tratamiento de rejuvenecimiento facial en {{ciudad}}?",
+    demoSlug: "clinica-estetica",
+    marketScore: 83,
   },
   [
     "médico estético",
     { key: "médica estética", busqueda: "médica estética" },
     { key: "medicina estética", busqueda: "medicina estética" },
+    { key: "clínica estética", busqueda: "clínica estética" },
+    { key: "spa médico", busqueda: "spa médico" },
   ],
 );
 
@@ -120,6 +134,7 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta una consulta médica en {{ciudad}}?",
+    marketScore: 50,
   },
   [
     "médico",
@@ -141,6 +156,8 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta una rinoplastia en {{ciudad}}?",
+    demoSlug: "clinica-estetica",
+    marketScore: 81,
   },
   [
     "cirujano plástico",
@@ -157,6 +174,7 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta un examen de la vista en {{ciudad}}?",
+    marketScore: 74,
   },
   ["oftalmólogo", { key: "oftalmóloga", busqueda: "oftalmóloga" }],
 );
@@ -169,6 +187,7 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta una sesión de fisioterapia en {{ciudad}}?",
+    marketScore: 64,
   },
   ["fisioterapeuta", { key: "fisioterapia", busqueda: "fisioterapia" }],
 );
@@ -181,6 +200,7 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta una sesión con un psicólogo en {{ciudad}}?",
+    marketScore: 58,
   },
   [
     "psicólogo",
@@ -197,6 +217,7 @@ add(
     lugar: "consultorio",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta una consulta de nutrición en {{ciudad}}?",
+    marketScore: 60,
   },
   [
     "nutriólogo",
@@ -213,6 +234,7 @@ add(
     lugar: "clínica",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta vacunar a un perro en {{ciudad}}?",
+    marketScore: 68,
   },
   [
     "veterinario",
@@ -231,6 +253,7 @@ add(
     accionCorta: "consultar",
     ejemploBlog: "¿Cuánto cobra un abogado por un divorcio en {{ciudad}}?",
     demoSlug: "abogado",
+    marketScore: 86,
   },
   [
     "abogado",
@@ -249,6 +272,7 @@ add(
     lugar: "despacho",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cobra un contador por la declaración anual en {{ciudad}}?",
+    marketScore: 52,
   },
   [
     "contador",
@@ -265,6 +289,7 @@ add(
     lugar: "local",
     accionCorta: "reservar",
     ejemploBlog: "¿Dónde comer en familia en {{ciudad}}?",
+    marketScore: 18,
   },
   ["restaurante", { key: "restaurant", busqueda: "restaurante" }],
 );
@@ -277,6 +302,7 @@ add(
     lugar: "local",
     accionCorta: "ordenar",
     ejemploBlog: "¿Dónde encontrar una buena cafetería en {{ciudad}}?",
+    marketScore: 20,
   },
   ["cafetería", { key: "café", busqueda: "cafetería" }],
 );
@@ -289,6 +315,7 @@ add(
     lugar: "salón",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta un corte y color en {{ciudad}}?",
+    marketScore: 36,
   },
   [
     "salón de belleza",
@@ -304,6 +331,7 @@ add(
     lugar: "centro",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta un facial en {{ciudad}}?",
+    marketScore: 40,
   },
   [
     "estética",
@@ -320,6 +348,7 @@ add(
     lugar: "barbería",
     accionCorta: "agendar",
     ejemploBlog: "¿Cuánto cuesta un corte y barba en {{ciudad}}?",
+    marketScore: 16,
   },
   ["barbería", { key: "barbero", busqueda: "barbería" }],
 );
@@ -332,6 +361,7 @@ add(
     lugar: "gimnasio",
     accionCorta: "inscribirse",
     ejemploBlog: "¿Cuánto cuesta la mensualidad de un gimnasio en {{ciudad}}?",
+    marketScore: 38,
   },
   ["gimnasio", { key: "gym", busqueda: "gimnasio" }],
 );
@@ -344,6 +374,7 @@ add(
     lugar: "spa",
     accionCorta: "reservar",
     ejemploBlog: "¿Cuánto cuesta un masaje en {{ciudad}}?",
+    marketScore: 42,
   },
   ["spa"],
 );
@@ -356,6 +387,7 @@ add(
     lugar: "taller",
     accionCorta: "cotizar",
     ejemploBlog: "¿Cuánto cuesta un servicio de frenos en {{ciudad}}?",
+    marketScore: 48,
   },
   [
     "taller mecánico",
@@ -374,6 +406,7 @@ add(
     accionCorta: "cotizar",
     ejemploBlog: "¿Cuánto cuesta una cocina integral en {{ciudad}}?",
     demoSlug: "cocinas",
+    marketScore: 85,
   },
   [
     "carpintería",
@@ -396,6 +429,7 @@ add(
     lugar: "oficina",
     accionCorta: "agendar una visita",
     ejemploBlog: "¿Cuánto cuesta rentar un departamento en {{ciudad}}?",
+    marketScore: 70,
   },
   ["inmobiliaria", { key: "bienes raíces", busqueda: "inmobiliaria" }],
 );
@@ -408,6 +442,7 @@ add(
     lugar: "plantel",
     accionCorta: "pedir informes",
     ejemploBlog: "¿Cuánto cuesta la colegiatura de una escuela en {{ciudad}}?",
+    marketScore: 44,
   },
   ["escuela"],
 );
@@ -420,6 +455,7 @@ add(
     lugar: "plantel",
     accionCorta: "pedir informes",
     ejemploBlog: "¿Cómo elegir colegio en {{ciudad}}?",
+    marketScore: 46,
   },
   ["colegio"],
 );
@@ -432,6 +468,7 @@ add(
     lugar: "estudio",
     accionCorta: "cotizar",
     ejemploBlog: "¿Cuánto cuesta un fotógrafo para una boda en {{ciudad}}?",
+    marketScore: 46,
   },
   [
     "fotógrafo",
@@ -441,8 +478,107 @@ add(
   ],
 );
 
+add(
+  {
+    clientes: "clientes",
+    busqueda: "constructora",
+    accion: "contratar",
+    lugar: "obra",
+    accionCorta: "cotizar",
+    ejemploBlog: "¿Cuánto cuesta construir una casa en {{ciudad}}?",
+    demoSlug: "constructora",
+    marketScore: 83,
+  },
+  [
+    "constructora",
+    { key: "constructoras", busqueda: "constructora" },
+    { key: "empresa constructora", busqueda: "constructora" },
+  ],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "arquitecto",
+    accion: "contratar",
+    lugar: "despacho",
+    accionCorta: "cotizar",
+    ejemploBlog: "¿Cuánto cuesta un proyecto arquitectónico en {{ciudad}}?",
+    demoSlug: "constructora",
+    marketScore: 83,
+  },
+  [
+    "arquitecto",
+    { key: "arquitecta", busqueda: "arquitecta" },
+    { key: "despacho de arquitectura", busqueda: "despacho de arquitectura" },
+    { key: "arquitectura", busqueda: "arquitecto" },
+  ],
+);
+
+add(
+  {
+    clientes: "clientes",
+    busqueda: "remodelaciones",
+    accion: "contratar",
+    lugar: "obra",
+    accionCorta: "cotizar",
+    ejemploBlog: "¿Cuánto cuesta una remodelación integral en {{ciudad}}?",
+    demoSlug: "constructora",
+    marketScore: 83,
+  },
+  [
+    "remodelaciones",
+    { key: "remodelación", busqueda: "remodelación" },
+    { key: "remodeladora", busqueda: "remodelaciones" },
+  ],
+);
+
+add(
+  {
+    clientes: "familias",
+    busqueda: "salón de eventos",
+    accion: "reservar",
+    lugar: "salón",
+    accionCorta: "cotizar",
+    ejemploBlog: "¿Cuánto cuesta rentar un salón de eventos en {{ciudad}}?",
+    demoSlug: "salon-eventos",
+    marketScore: 83,
+  },
+  [
+    "salón de eventos",
+    { key: "salones de eventos", busqueda: "salón de eventos" },
+    { key: "salón de fiestas", busqueda: "salón de fiestas" },
+    { key: "salones de fiestas", busqueda: "salón de fiestas" },
+  ],
+);
+
+add(
+  {
+    clientes: "familias",
+    busqueda: "jardín de eventos",
+    accion: "reservar",
+    lugar: "jardín",
+    accionCorta: "cotizar",
+    ejemploBlog: "¿Cuánto cuesta rentar un jardín de eventos en {{ciudad}}?",
+    demoSlug: "salon-eventos",
+    marketScore: 83,
+  },
+  [
+    "jardín de eventos",
+    { key: "jardines de eventos", busqueda: "jardín de eventos" },
+    { key: "quinta", busqueda: "quinta para eventos", exactOnly: true },
+  ],
+);
+
 export function knownSectorKeys(): readonly string[] {
   return [...SECTORS.keys()];
+}
+
+/** Ticket score for the giro people searched, 0–100. Notarías stay at the bottom. */
+export function marketScoreForSpecialty(specialty: string): number {
+  const normalized = normalizeSectorKey(specialty);
+  if (/(^|\s)notari/.test(normalized)) return 12;
+  return resolveSector(specialty).marketScore;
 }
 
 export function normalizeSectorKey(value: string): string {
@@ -507,6 +643,7 @@ function genericSector(specialty: string): SectorCopy {
     lugar: "negocio",
     accionCorta: "contactar",
     ejemploBlog: `5 cosas que debe saber antes de contratar ${articleFor(giro)} ${giro} en {{ciudad}}`,
+    marketScore: 30,
   };
 }
 

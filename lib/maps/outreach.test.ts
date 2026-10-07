@@ -53,6 +53,20 @@ describe("default outreach message", () => {
     );
   });
 
+  it("usa la ciudad del negocio en la apertura", () => {
+    const text = buildOpeningMessage(
+      lead({
+        name: "Dental Monterrey",
+        specialty: "dentista",
+        city: "Monterrey",
+        rating: 4.8,
+        userRatingCount: 40,
+      }),
+    );
+    assert.match(text, /dentista en Monterrey/);
+    assert.equal(text.includes("Querétaro"), false);
+  });
+
   it("arma la apertura corta de un dentista", () => {
     const text = buildOpeningMessage(
       lead({
@@ -344,6 +358,88 @@ describe("sector matching", () => {
     assert.equal(resolveSector("cocinas económicas").demoSlug, undefined);
   });
 
+  it("cierra los giros nuevos con su demo y un ejemplo de blog", () => {
+    const estetica = buildDefaultLeadMessage(
+      lead({
+        name: "Clínica Aura",
+        specialty: "clínica estética",
+        city: "Monterrey",
+      }),
+    );
+    assert.match(estetica, /rejuvenecimiento facial en Monterrey/);
+    assert.match(
+      estetica,
+      /Desde \$8,000 MXN\. Aquí puede ver un ejemplo de cómo quedaría la suya: https:\/\/torioweb\.com\/ejemplos\/clinica-estetica\/\?nombre=Cl%C3%ADnica%20Aura$/,
+    );
+
+    const cirujano = buildDefaultLeadMessage(
+      lead({
+        name: "Dr. Solís",
+        specialty: "cirujano plástico",
+        city: "Guadalajara",
+      }),
+    );
+    assert.match(cirujano, /rinoplastia en Guadalajara/);
+    assert.match(cirujano, /ejemplos\/clinica-estetica\//);
+    assert.equal(cirujano.includes("Querétaro"), false);
+
+    const obra = buildDefaultLeadMessage(
+      lead({
+        name: "Constructora Norte",
+        specialty: "constructora",
+        city: "Tijuana",
+      }),
+    );
+    assert.match(obra, /construir una casa en Tijuana/);
+    assert.match(
+      obra,
+      /Desde \$8,000 MXN\. Aquí puede ver un ejemplo de cómo quedaría la suya: https:\/\/torioweb\.com\/ejemplos\/constructora\/\?nombre=Constructora%20Norte$/,
+    );
+
+    const arquitectura = buildDefaultLeadMessage(
+      lead({
+        name: "Estudio Loma",
+        specialty: "despacho de arquitectura",
+        city: "Mérida",
+      }),
+    );
+    assert.match(arquitectura, /proyecto arquitectónico en Mérida/);
+    assert.match(arquitectura, /ejemplos\/constructora\//);
+
+    const remodelacion = buildDefaultLeadMessage(
+      lead({
+        name: "Remodelaciones Sur",
+        specialty: "remodelaciones",
+        city: "Puebla",
+      }),
+    );
+    assert.match(remodelacion, /remodelación integral en Puebla/);
+    assert.match(remodelacion, /ejemplos\/constructora\//);
+
+    const salon = buildDefaultLeadMessage(
+      lead({
+        name: "Quinta Los Olivos",
+        specialty: "salón de eventos",
+        city: "León",
+      }),
+    );
+    assert.match(salon, /salón de eventos en León/);
+    assert.match(
+      salon,
+      /Desde \$8,000 MXN\. Aquí puede ver un ejemplo de cómo quedaría la suya: https:\/\/torioweb\.com\/ejemplos\/salon-eventos\/\?nombre=Quinta%20Los%20Olivos$/,
+    );
+
+    const quinta = buildDefaultLeadMessage(
+      lead({
+        name: "Quinta Real",
+        specialty: "quinta",
+        city: "Querétaro",
+      }),
+    );
+    assert.match(quinta, /jardín de eventos en Querétaro/);
+    assert.match(quinta, /ejemplos\/salon-eventos\//);
+  });
+
   it("agrega el demo dental al seguimiento de un ortodoncista", () => {
     const text = buildDefaultLeadMessage(
       lead({
@@ -385,10 +481,28 @@ describe("sector matching", () => {
   });
 
   it("no confunde un salón de eventos ni un taller de costura con otro giro", () => {
-    assert.equal(resolveSector("salón de eventos").lugar, "negocio");
+    assert.equal(resolveSector("salón de eventos").demoSlug, "salon-eventos");
+    assert.equal(resolveSector("salón de eventos").busqueda, "salón de eventos");
+    assert.equal(resolveSector("salón de eventos").lugar, "salón");
+    assert.notEqual(
+      resolveSector("salón de eventos").ejemploBlog,
+      resolveSector("salón").ejemploBlog,
+    );
     assert.equal(resolveSector("taller de costura").busqueda, "taller de costura");
     assert.equal(resolveSector("salón").busqueda, "salón de belleza");
     assert.equal(resolveSector("taller").busqueda, "taller mecánico");
+    assert.equal(resolveSector("spa médico").demoSlug, "clinica-estetica");
+    assert.equal(resolveSector("medicina estética").demoSlug, "clinica-estetica");
+    assert.equal(resolveSector("clínica estética").demoSlug, "clinica-estetica");
+    assert.equal(resolveSector("cirujano plástico").demoSlug, "clinica-estetica");
+    assert.equal(resolveSector("estética").demoSlug, undefined);
+    assert.equal(resolveSector("spa").demoSlug, undefined);
+    assert.equal(resolveSector("constructora").demoSlug, "constructora");
+    assert.equal(resolveSector("arquitecto").demoSlug, "constructora");
+    assert.equal(resolveSector("despacho de arquitectura").demoSlug, "constructora");
+    assert.equal(resolveSector("remodelaciones").demoSlug, "constructora");
+    assert.equal(resolveSector("quinta").demoSlug, "salon-eventos");
+    assert.equal(resolveSector("jardín de eventos").demoSlug, "salon-eventos");
   });
 
   it("rellena cada giro conocido sin dejar tokens ni undefined", () => {

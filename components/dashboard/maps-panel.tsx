@@ -18,13 +18,20 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import {
+  CUSTOM_CITY_VALUE,
+  DEFAULT_MAPS_CITY,
+  MEXICO_CITY_PRESETS,
+} from "@/lib/maps/cities";
+import {
   DEFAULT_WHATSAPP_TEMPLATE,
   OPENING_WHATSAPP_TEMPLATE,
   REASON_LABELS,
   SPECIALTY_PRESETS,
   STATUS_LABELS,
+  STATUS_SORT,
   TEMPLATE_TOKENS,
 } from "@/lib/maps/constants";
+import { scoreMapsLead } from "@/lib/maps/score";
 import {
   buildFollowUpMessage,
   buildOpeningMessage,
@@ -43,12 +50,16 @@ type MapsPanelProps = {
 };
 
 function sortLeads(leads: MapsLead[]): MapsLead[] {
-  return [...leads].sort(
-    (a, b) =>
-      b.priority_score - a.priority_score ||
+  return [...leads].sort((a, b) => {
+    const statusDelta = STATUS_SORT[a.status] - STATUS_SORT[b.status];
+    if (statusDelta !== 0) return statusDelta;
+    const scoreDelta = scoreMapsLead(b).score - scoreMapsLead(a).score;
+    if (scoreDelta !== 0) return scoreDelta;
+    return (
       (b.user_rating_count ?? 0) - (a.user_rating_count ?? 0) ||
-      a.name.localeCompare(b.name, "es"),
-  );
+      a.name.localeCompare(b.name, "es")
+    );
+  });
 }
 
 function mergeLeads(current: MapsLead[], incoming: MapsLead[]): MapsLead[] {
@@ -67,9 +78,11 @@ export function MapsPanel({
   schemaReady,
 }: MapsPanelProps) {
   const { toast } = useToast();
-  const [leads, setLeads] = React.useState(initialLeads);
+  const [leads, setLeads] = React.useState(() => sortLeads(initialLeads));
   const [specialty, setSpecialty] = React.useState("dentista");
-  const [city, setCity] = React.useState("");
+  const [cityChoice, setCityChoice] = React.useState(DEFAULT_MAPS_CITY);
+  const [customCity, setCustomCity] = React.useState("");
+  const city = cityChoice === CUSTOM_CITY_VALUE ? customCity : cityChoice;
   const [searching, setSearching] = React.useState(false);
   const [summary, setSummary] = React.useState<MapsSearchSummary | null>(null);
   const [status, setStatus] = React.useState<"" | MapsLeadStatus>("");
@@ -80,7 +93,7 @@ export function MapsPanel({
   const templateTouched = React.useRef(false);
 
   React.useEffect(() => {
-    setLeads(initialLeads);
+    setLeads(sortLeads(initialLeads));
   }, [initialLeads]);
 
   React.useEffect(() => {
@@ -136,7 +149,11 @@ export function MapsPanel({
       }
       setSummary(result.summary);
       setFilterSpecialty(specialty.trim().replace(/\s+/g, " "));
-      setFilterCity(city.trim().replace(/\s+/g, " "));
+      const resultCities = [
+        ...new Set((result.leads ?? []).map((lead) => lead.city)),
+      ];
+      const onlyCity = resultCities.length === 1 ? resultCities[0] : undefined;
+      setFilterCity(onlyCity ?? "");
       setStatus("");
       if (result.leads) setLeads((current) => mergeLeads(current, result.leads ?? []));
       toast(result.message, "success");
@@ -192,22 +209,39 @@ export function MapsPanel({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="maps-city">Ciudad o zona</Label>
-                <Input
+                <Label htmlFor="maps-city">Ciudad o estado</Label>
+                <select
                   id="maps-city"
-                  value={city}
-                  onChange={(event) => setCity(event.target.value)}
-                  placeholder="Querétaro"
-                  maxLength={80}
-                  required
+                  className={selectClass}
+                  value={cityChoice}
                   disabled={!schemaReady}
-                  onInvalid={(event) =>
-                    event.currentTarget.setCustomValidity(
-                      "Escribe una ciudad o zona.",
-                    )
-                  }
-                  onInput={(event) => event.currentTarget.setCustomValidity("")}
-                />
+                  onChange={(event) => setCityChoice(event.target.value)}
+                >
+                  {MEXICO_CITY_PRESETS.map((preset) => (
+                    <option key={preset.query} value={preset.query}>
+                      {preset.label}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_CITY_VALUE}>Otra ciudad o estado…</option>
+                </select>
+                {cityChoice === CUSTOM_CITY_VALUE ? (
+                  <Input
+                    id="maps-city-custom"
+                    value={customCity}
+                    onChange={(event) => setCustomCity(event.target.value)}
+                    placeholder="Jalisco, Nuevo León, Playa del Carmen…"
+                    maxLength={80}
+                    required
+                    disabled={!schemaReady}
+                    aria-label="Otra ciudad o estado"
+                    onInvalid={(event) =>
+                      event.currentTarget.setCustomValidity(
+                        "Escribe una ciudad o un estado.",
+                      )
+                    }
+                    onInput={(event) => event.currentTarget.setCustomValidity("")}
+                  />
+                ) : null}
               </div>
             </div>
 
@@ -236,8 +270,10 @@ export function MapsPanel({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm leading-6 text-muted-foreground">
                 Cada búsqueda consulta Google Places (hasta 3 páginas, tope de
-                30 por hora). Solo se guardan negocios sin sitio, o cuyo sitio
-                es una red social. Los que ya estaban conservan estado y notas.
+                30 por hora) en la ciudad o el estado que elijas. Solo se
+                guardan negocios sin sitio, o cuyo sitio es una red social. Los
+                que ya estaban en tu lista no se vuelven a mostrar; conservan
+                estado y notas. El mensaje usa la ciudad del negocio.
               </p>
               <Button
                 type="submit"
@@ -256,8 +292,14 @@ export function MapsPanel({
               className="mt-4 rounded-md bg-muted px-4 py-3 text-sm leading-6 text-foreground"
             >
               «{summary.query}»: {summary.found} negocios en {summary.pages}{" "}
-              {summary.pages === 1 ? "página" : "páginas"}. Se guardaron{" "}
-              {summary.leads} prospectos. {summary.withWebsite} ya tenían sitio
+              {summary.pages === 1 ? "página" : "páginas"}.{" "}
+              {summary.leads - summary.alreadySaved === 1
+                ? "Se guardó 1 prospecto nuevo."
+                : `Se guardaron ${summary.leads - summary.alreadySaved} prospectos nuevos.`}{" "}
+              {summary.alreadySaved > 0
+                ? `${summary.alreadySaved} ya estaban guardados y no se volvieron a mostrar. `
+                : ""}
+              {summary.withWebsite} ya tenían sitio
               {summary.skippedClosed > 0
                 ? ` y ${summary.skippedClosed} estaban cerrados de forma permanente`
                 : ""}
@@ -324,7 +366,8 @@ export function MapsPanel({
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
-          Ordenados por prioridad: más reseñas y mejor calificación.
+          Los nuevos van primero. La prioridad junta el giro, el teléfono de
+          WhatsApp, si no tiene sitio, las reseñas y si el negocio sigue abierto.
         </p>
 
         {visible.length === 0 ? (
@@ -559,6 +602,7 @@ function LeadCard({
     });
   }
 
+  const prospect = scoreMapsLead(lead);
   const openingHref = lead.whatsapp_e164
     ? whatsAppHref(lead.whatsapp_e164, opening)
     : null;
@@ -590,8 +634,14 @@ function LeadCard({
               {lead.rating == null
                 ? "Sin calificación"
                 : `${lead.rating.toFixed(1)} estrellas · ${lead.user_rating_count ?? 0} reseñas`}
-              <span className="ml-2 font-medium text-primary">
-                Prioridad {lead.priority_score}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-foreground">
+              <span className="font-medium text-primary">
+                Prioridad {prospect.score}
+              </span>
+              <span className="text-muted-foreground">
+                {" "}
+                · {prospect.reason}
               </span>
             </p>
           </div>

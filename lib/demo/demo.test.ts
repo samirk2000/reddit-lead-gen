@@ -17,6 +17,9 @@ describe("external demo urls", () => {
       assert.equal(isKnownDemoSlug("dentista"), true);
       assert.equal(isKnownDemoSlug("cocinas"), true);
       assert.equal(isKnownDemoSlug("abogado"), true);
+      assert.equal(isKnownDemoSlug("clinica-estetica"), true);
+      assert.equal(isKnownDemoSlug("constructora"), true);
+      assert.equal(isKnownDemoSlug("salon-eventos"), true);
       assert.equal(isKnownDemoSlug("notaria"), false);
       assert.equal(
         externalDemoUrl("dentista", "ODONTOLOGIA FAMILIAR ESPECIALIZADA"),
@@ -30,6 +33,18 @@ describe("external demo urls", () => {
       assert.equal(
         externalDemoUrl("abogado", "Bufete García y Asociados"),
         "https://torioweb.com/ejemplos/abogado/?nombre=Bufete%20Garc%C3%ADa%20y%20Asociados",
+      );
+      assert.equal(
+        externalDemoUrl("clinica-estetica", "Clínica Aura"),
+        "https://torioweb.com/ejemplos/clinica-estetica/?nombre=Cl%C3%ADnica%20Aura",
+      );
+      assert.equal(
+        externalDemoUrl("constructora", "Constructora Norte"),
+        "https://torioweb.com/ejemplos/constructora/?nombre=Constructora%20Norte",
+      );
+      assert.equal(
+        externalDemoUrl("salon-eventos", "Quinta Los Olivos"),
+        "https://torioweb.com/ejemplos/salon-eventos/?nombre=Quinta%20Los%20Olivos",
       );
       assert.equal(externalDemoUrl("restaurante", "La Parrilla"), null);
 

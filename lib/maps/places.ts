@@ -46,16 +46,26 @@ function placesError(status: number, body: string, apiKey: string): MapsError {
   );
 }
 
+export type SearchPlacesOptions = {
+  /** Defaults to {@link MAX_PLACE_PAGES}. The daily list passes 1. */
+  maxPages?: number;
+  /** Defaults to 20s. */
+  timeoutMs?: number;
+};
+
 export async function searchPlaces(
   textQuery: string,
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
+  options?: SearchPlacesOptions,
 ): Promise<{ places: RawPlace[]; pages: number }> {
   const places: RawPlace[] = [];
   let pageToken: string | undefined;
   let pages = 0;
+  const maxPages = clampPages(options?.maxPages);
+  const timeoutMs = options?.timeoutMs ?? 20_000;
 
-  for (let page = 0; page < MAX_PLACE_PAGES; page += 1) {
+  for (let page = 0; page < maxPages; page += 1) {
     const body: Record<string, unknown> = {
       textQuery,
       languageCode: "es",
@@ -75,7 +85,7 @@ export async function searchPlaces(
         },
         body: JSON.stringify(body),
         cache: "no-store",
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       console.error("[maps] places network error", {
@@ -116,4 +126,9 @@ export async function searchPlaces(
   }
 
   return { places, pages };
+}
+
+function clampPages(maxPages: number | undefined): number {
+  if (maxPages == null || !Number.isFinite(maxPages)) return MAX_PLACE_PAGES;
+  return Math.min(MAX_PLACE_PAGES, Math.max(1, Math.floor(maxPages)));
 }

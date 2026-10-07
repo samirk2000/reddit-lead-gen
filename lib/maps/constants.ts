@@ -15,10 +15,21 @@ export const SPECIALTY_PRESETS = [
 
 export const STATUS_LABELS: Record<MapsLeadStatus, string> = {
   nuevo: "Nuevo",
+  enviado_a_lista: "Enviado a lista",
   contactado: "Contactado",
   respondió: "Respondió",
   cerrado: "Cerrado",
   descartado: "Descartado",
+};
+
+/** Fresh prospects first, then the daily list, then ones already worked. */
+export const STATUS_SORT: Record<MapsLeadStatus, number> = {
+  nuevo: 0,
+  enviado_a_lista: 1,
+  contactado: 2,
+  respondió: 3,
+  cerrado: 4,
+  descartado: 5,
 };
 
 export const REASON_LABELS: Record<MapsLeadReason, string> = {

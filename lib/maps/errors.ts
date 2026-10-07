@@ -35,6 +35,9 @@ export function mapsDbErrorMessage(error: DbErrorLike): string {
   if (code === "42501") {
     return "La base rechazó el acceso a los prospectos. Vuelve a ejecutar la migración para crear las políticas RLS.";
   }
+  if (code === "23514") {
+    return "La base todavía no acepta el estado «Enviado a lista». En Supabase → SQL Editor, ejecuta supabase/migrations/20261007_maps_digest.sql.";
+  }
   return "No se pudo usar la base de prospectos.";
 }
 

@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import {
+  canonicalCityQuery,
+  extractMexicanCity,
+  resolveBusinessCity,
+} from "@/lib/maps/cities";
 import { PLACES_FIELD_MASK, searchPlaces } from "@/lib/maps/places";
 import { leadDraftToInsert } from "@/lib/maps/persist";
-import { normalizeMexicanWhatsApp } from "@/lib/maps/phone";
+import {
+  bestMexicanPhone,
+  classifyMexicanPhone,
+  normalizeMexicanWhatsApp,
+} from "@/lib/maps/phone";
+import { scoreProspect } from "@/lib/maps/score";
 import { renderLeadMessage, whatsAppHref } from "@/lib/maps/message";
 import {
   buildLeadDrafts,
@@ -29,6 +39,18 @@ describe("normalizeMexicanWhatsApp", () => {
     assert.equal(normalizeMexicanWhatsApp("0444421234567"), "524421234567");
     assert.equal(normalizeMexicanWhatsApp("0454421234567"), "524421234567");
     assert.equal(normalizeMexicanWhatsApp("014421234567"), "524421234567");
+  });
+
+  it("marca móvil solo cuando el número trae 521, 044 o 045", () => {
+    assert.equal(classifyMexicanPhone("5214421234567").kind, "mobile");
+    assert.equal(classifyMexicanPhone("+52 1 81 1234 5678").kind, "mobile");
+    assert.equal(classifyMexicanPhone("0444421234567").kind, "mobile");
+    assert.equal(classifyMexicanPhone("442 123 4567").kind, "possible");
+    assert.equal(classifyMexicanPhone("+52 81 1234 5678").e164, "528112345678");
+    assert.deepEqual(bestMexicanPhone("+52 81 0000 0000", "044 81 0000 0000"), {
+      e164: "528100000000",
+      kind: "mobile",
+    });
   });
 
   it("rechaza vacío y números que no son de México", () => {
@@ -114,6 +136,26 @@ describe("buildLeadDrafts", () => {
     assert.ok((drafts[0]?.priorityScore ?? 0) > (drafts[1]?.priorityScore ?? 0));
   });
 
+  it("guarda la ciudad de la dirección, no la del estado buscado", () => {
+    const { drafts } = buildLeadDrafts(
+      [
+        {
+          id: "mty",
+          displayName: { text: "Dental Norte" },
+          formattedAddress: "Av. Constitución 100, Centro, Monterrey, N.L., 64000, México",
+          internationalPhoneNumber: "+52 1 81 1234 5678",
+          rating: 4.8,
+          userRatingCount: 40,
+          businessStatus: "OPERATIONAL",
+        },
+      ],
+      "dentista",
+      "Jalisco",
+    );
+    assert.equal(drafts[0]?.city, "Monterrey");
+    assert.equal(drafts[0]?.whatsappE164, "528112345678");
+  });
+
   it("puntúa 100 con 5 estrellas y unas 1000 reseñas", () => {
     assert.equal(priorityScore(5, 1000), 100);
     assert.equal(priorityScore(null, 10), 0);
@@ -170,6 +212,91 @@ describe("leadDraftToInsert", () => {
   });
 });
 
+describe("prospect score", () => {
+  const base = {
+    specialty: "dentista",
+    leadReason: "sin_sitio" as const,
+    rating: 4.8,
+    reviewCount: 40,
+    phoneKind: "possible" as const,
+    businessStatus: "OPERATIONAL",
+  };
+
+  it("prioriza giro, sitio propio, móvil y operación, y hunde a quien no tiene teléfono", () => {
+    const dentist = scoreProspect(base);
+    const restaurant = scoreProspect({ ...base, specialty: "restaurante" });
+    const social = scoreProspect({ ...base, leadReason: "solo_red_social" });
+    const mobile = scoreProspect({ ...base, phoneKind: "mobile" });
+    const closed = scoreProspect({ ...base, businessStatus: "CLOSED_TEMPORARILY" });
+    const noPhone = scoreProspect({
+      specialty: "dentista",
+      leadReason: "sin_sitio",
+      rating: 5,
+      reviewCount: 500,
+      phoneKind: "none",
+      businessStatus: "OPERATIONAL",
+    });
+    const barber = scoreProspect({
+      specialty: "barbería",
+      leadReason: "sin_sitio",
+      rating: 4.6,
+      reviewCount: 40,
+      phoneKind: "possible",
+      businessStatus: "OPERATIONAL",
+    });
+
+    assert.ok(dentist.score > restaurant.score);
+    assert.ok(dentist.score > social.score);
+    assert.ok(mobile.score > dentist.score);
+    assert.ok(dentist.score > closed.score);
+    assert.ok(barber.score > noPhone.score);
+    assert.match(dentist.reason, /Alto valor/);
+    assert.match(dentist.reason, /sin sitio web/);
+    assert.match(dentist.reason, /teléfono para WhatsApp/);
+    assert.match(dentist.reason, /4\.8 y 40 reseñas/);
+    assert.match(dentist.reason, /en operación/);
+    assert.match(restaurant.reason, /Bajo valor/);
+    assert.match(noPhone.reason, /sin teléfono/);
+    assert.match(
+      scoreProspect({ ...base, rating: 5, reviewCount: 2 }).reason,
+      /poca actividad en reseñas/,
+    );
+  });
+});
+
+describe("mexican city", () => {
+  it("lee la ciudad real y canoniza alias", () => {
+    assert.equal(
+      extractMexicanCity("Av. Constitución 100, Centro, Monterrey, N.L., 64000, México"),
+      "Monterrey",
+    );
+    assert.equal(
+      extractMexicanCity(
+        "Av. Vasconcelos 100, Centro, 76000 Santiago de Querétaro, Qro., México",
+      ),
+      "Querétaro",
+    );
+    assert.equal(
+      extractMexicanCity(
+        "Insurgentes 1, Roma Norte, Cuauhtémoc, Ciudad de México, CDMX, 06700, México",
+      ),
+      "Ciudad de México",
+    );
+    assert.equal(
+      extractMexicanCity("Calle 1, Col. Hidalgo, Tepatitlán, Jalisco, 47600, México"),
+      "Tepatitlán",
+    );
+    assert.equal(
+      extractMexicanCity("Av. Juárez 10, Centro, Chihuahua, Chih., 31000, México"),
+      "Chihuahua",
+    );
+    assert.equal(resolveBusinessCity(null, "León"), "León");
+    assert.equal(resolveBusinessCity("   ", ""), "");
+    assert.equal(canonicalCityQuery("cdmx"), "Ciudad de México");
+    assert.equal(canonicalCityQuery("Querétaro"), "Querétaro");
+  });
+});
+
 describe("searchPlaces", () => {
   it("pide la máscara corta y se detiene a las 3 páginas", async () => {
     const bodies = [
@@ -200,6 +327,22 @@ describe("searchPlaces", () => {
       result.places.map((place) => place.id),
       ["a", "b", "c"],
     );
+  });
+
+  it("se detiene en una página cuando el digest lo pide", async () => {
+    let calls = 0;
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1;
+      return new Response(
+        JSON.stringify({ places: [{ id: "a" }], nextPageToken: "more" }),
+        { status: 200 },
+      );
+    };
+    const result = await searchPlaces("dentista en León", "secret-key", fetchImpl, {
+      maxPages: 1,
+    });
+    assert.equal(calls, 1);
+    assert.equal(result.pages, 1);
   });
 
   it("no filtra la clave de API en el error", async () => {
