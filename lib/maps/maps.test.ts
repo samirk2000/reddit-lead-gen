@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   canonicalCityQuery,
+  commonCityName,
   extractMexicanCity,
   resolveBusinessCity,
 } from "@/lib/maps/cities";
@@ -13,7 +14,7 @@ import {
   normalizeMexicanWhatsApp,
 } from "@/lib/maps/phone";
 import { scoreProspect } from "@/lib/maps/score";
-import { renderLeadMessage, whatsAppHref } from "@/lib/maps/message";
+import { buildOpeningMessage, renderLeadMessage, whatsAppHref } from "@/lib/maps/message";
 import {
   buildLeadDrafts,
   isSocialWebsite,
@@ -294,6 +295,82 @@ describe("mexican city", () => {
     assert.equal(resolveBusinessCity("   ", ""), "");
     assert.equal(canonicalCityQuery("cdmx"), "Ciudad de México");
     assert.equal(canonicalCityQuery("Querétaro"), "Querétaro");
+  });
+
+  it("usa el nombre corto en el texto y deja municipios como están", () => {
+    assert.equal(commonCityName("Heroica Puebla de Zaragoza"), "Puebla");
+    assert.equal(commonCityName("Puebla de Zaragoza"), "Puebla");
+    assert.equal(commonCityName("Santiago de Querétaro"), "Querétaro");
+    assert.equal(commonCityName("Heroica Veracruz"), "Veracruz");
+    assert.equal(commonCityName("Victoria de Durango"), "Durango");
+    assert.equal(commonCityName("Heroica Matamoros"), "Matamoros");
+    assert.equal(commonCityName("San Luis Potosí"), "San Luis Potosí");
+    assert.equal(commonCityName("Ciudad de México"), "Ciudad de México");
+    assert.equal(commonCityName("Ciudad de Mexico"), "Ciudad de México");
+    assert.equal(commonCityName("Guadalupe"), "Guadalupe");
+    assert.equal(commonCityName("Zapopan"), "Zapopan");
+    assert.equal(commonCityName("Ciudad del Carmen"), "Ciudad del Carmen");
+    assert.equal(commonCityName("Ciudad Juárez"), "Ciudad Juárez");
+    assert.equal(commonCityName("Ciudad Victoria"), "Ciudad Victoria");
+    assert.equal(commonCityName("San Miguel de Allende"), "San Miguel de Allende");
+    assert.equal(commonCityName("San Pedro Garza García"), "San Pedro Garza García");
+    assert.equal(commonCityName("San Nicolás de los Garza"), "San Nicolás de los Garza");
+    assert.equal(commonCityName("Heroica Nogales"), "Nogales");
+    assert.equal(commonCityName("Ciudad de Allende"), "Ciudad de Allende");
+    assert.equal(commonCityName("Ciudad de Puebla"), "Puebla");
+    assert.equal(commonCityName("León de los Aldama"), "León");
+    assert.equal(
+      commonCityName("Heroica Ciudad de Huajuapan de León"),
+      "Huajuapan de León",
+    );
+    assert.equal(commonCityName(""), "");
+
+    assert.equal(
+      extractMexicanCity(
+        "Calle 5 Sur 123, Centro Histórico, 72000 Heroica Puebla de Zaragoza, Pue., México",
+      ),
+      "Puebla",
+    );
+    assert.equal(
+      extractMexicanCity("Av. 1, Centro, Victoria de Durango, Dgo., 34000, México"),
+      "Durango",
+    );
+    assert.equal(
+      extractMexicanCity("Calle 1, Centro, Heroica Matamoros, Tamps., 87300, México"),
+      "Matamoros",
+    );
+    assert.equal(
+      extractMexicanCity("Av. Juárez 1, Centro, Guadalupe, N.L., 67100, México"),
+      "Guadalupe",
+    );
+    assert.equal(resolveBusinessCity(null, "Heroica Veracruz"), "Veracruz");
+    assert.equal(canonicalCityQuery("Heroica Puebla de Zaragoza"), "Puebla");
+
+    const { drafts } = buildLeadDrafts(
+      [
+        {
+          id: "puebla",
+          displayName: { text: "Dental Centro" },
+          formattedAddress:
+            "Calle 5 Sur 123, Centro Histórico, 72000 Heroica Puebla de Zaragoza, Pue., México",
+          nationalPhoneNumber: "222 000 1122",
+        },
+      ],
+      "dentista",
+      "Puebla",
+    );
+    assert.equal(drafts[0]?.city, "Puebla");
+
+    const opening = buildOpeningMessage({
+      name: "Dental Centro",
+      specialty: "dentista",
+      city: "Heroica Puebla de Zaragoza",
+      rating: 4.8,
+      userRatingCount: 40,
+    });
+    assert.match(opening, /en Puebla/);
+    assert.equal(opening.includes("Zaragoza"), false);
+    assert.equal(opening.includes("Heroica"), false);
   });
 });
 

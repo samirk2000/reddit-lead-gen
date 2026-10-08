@@ -45,14 +45,43 @@ for (const preset of MEXICO_CITY_PRESETS) {
 }
 
 const EXTRA_CITY_ALIASES: Readonly<Record<string, string>> = {
-  "santiago de queretaro": "Querétaro",
   cdmx: "Ciudad de México",
   df: "Ciudad de México",
   "distrito federal": "Ciudad de México",
   "mexico city": "Ciudad de México",
 };
 
-for (const [alias, canonical] of Object.entries(EXTRA_CITY_ALIASES)) {
+/**
+ * Official municipality names Google Places returns, keyed already
+ * accent-stripped, mapped to the name people actually say.
+ * Suburbs stay as themselves: Guadalupe and Zapopan are not here.
+ */
+const OFFICIAL_CITY_NAMES: Readonly<Record<string, string>> = {
+  "heroica puebla de zaragoza": "Puebla",
+  "puebla de zaragoza": "Puebla",
+  "santiago de queretaro": "Querétaro",
+  "heroica veracruz": "Veracruz",
+  "victoria de durango": "Durango",
+  "heroica matamoros": "Matamoros",
+  "leon de los aldama": "León",
+  "oaxaca de juarez": "Oaxaca",
+  "toluca de lerdo": "Toluca",
+  "culiacan rosales": "Culiacán",
+  "san francisco de campeche": "Campeche",
+  "acapulco de juarez": "Acapulco",
+  "ecatepec de morelos": "Ecatepec",
+  "tlalnepantla de baz": "Tlalnepantla",
+  "naucalpan de juarez": "Naucalpan",
+  "coacalco de berriozabal": "Coacalco",
+  "cuajimalpa de morelos": "Cuajimalpa",
+  "chalco de diaz covarrubias": "Chalco",
+  "san pedro tlaquepaque": "Tlaquepaque",
+};
+
+for (const [alias, canonical] of Object.entries({
+  ...EXTRA_CITY_ALIASES,
+  ...OFFICIAL_CITY_NAMES,
+})) {
   CITY_CANONICAL.set(alias, canonical);
 }
 
@@ -129,11 +158,50 @@ const STATE_NAMES = new Set([
   "distrito federal",
 ]);
 
-/** Preset label/query, or the typed text when it is not a known alias. */
-export function canonicalCityQuery(input: string): string {
+const MAX_CITY_STRIP_DEPTH = 3;
+
+/**
+ * Name to show and search. Official ceremonial names become the short city
+ * ("Heroica Puebla de Zaragoza" → "Puebla"). "Ciudad de México" stays.
+ * A leading "Heroica" is honorary and drops. "Ciudad de …" drops only when
+ * the rest is already a known city, so "Ciudad de Allende" and
+ * "Ciudad del Carmen" stay. Guadalupe and Zapopan stay.
+ */
+export function commonCityName(input: string, depth = 0): string {
   const trimmed = input.trim().replace(/\s+/g, " ");
-  if (!trimmed) return trimmed;
-  return CITY_CANONICAL.get(normalizeSectorKey(trimmed)) ?? trimmed;
+  if (!trimmed) return "";
+  const key = normalizeSectorKey(trimmed);
+  if (!key) return trimmed;
+
+  const known = CITY_CANONICAL.get(key);
+  if (known) return known;
+  if (depth >= MAX_CITY_STRIP_DEPTH) return trimmed;
+
+  const heroicaCiudad = trimmed.match(/^heroica\s+ciudad\s+de\s+(.+)$/i);
+  if (heroicaCiudad?.[1]) {
+    if (normalizeSectorKey(heroicaCiudad[1]) === "mexico") return "Ciudad de México";
+    return commonCityName(heroicaCiudad[1], depth + 1);
+  }
+
+  const heroica = trimmed.match(/^heroica\s+(.+)$/i);
+  if (heroica?.[1] && heroica[1].trim().length >= 2) {
+    return commonCityName(heroica[1], depth + 1);
+  }
+
+  const ciudadDe = trimmed.match(/^ciudad\s+de\s+(.+)$/i);
+  if (ciudadDe?.[1]) {
+    const remainderKey = normalizeSectorKey(ciudadDe[1]);
+    if (remainderKey && remainderKey !== "mexico" && CITY_CANONICAL.has(remainderKey)) {
+      return commonCityName(ciudadDe[1], depth + 1);
+    }
+  }
+
+  return trimmed;
+}
+
+/** Preset, official name, or the typed text when it is not a known alias. */
+export function canonicalCityQuery(input: string): string {
+  return commonCityName(input);
 }
 
 /**
@@ -159,7 +227,7 @@ export function extractMexicanCity(address: string): string | null {
     if (!part || isSkippable(part) || isMexicanState(part)) continue;
     const stripped = stripPostalPrefix(part);
     if (!stripped || isMexicanState(stripped) || isSkippable(stripped)) continue;
-    return stripped;
+    return commonCityName(stripped);
   }
 
   return null;
@@ -173,7 +241,7 @@ export function resolveBusinessCity(
   address: string | null | undefined,
   searchedCity: string,
 ): string {
-  const fallback = searchedCity.trim().replace(/\s+/g, " ");
+  const fallback = commonCityName(searchedCity);
   const parsed = address?.trim() ? extractMexicanCity(address) : null;
   return parsed || fallback;
 }

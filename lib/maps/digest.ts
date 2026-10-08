@@ -1,4 +1,4 @@
-import { MEXICO_CITY_PRESETS, canonicalCityQuery } from "@/lib/maps/cities";
+import { MEXICO_CITY_PRESETS, canonicalCityQuery, commonCityName } from "@/lib/maps/cities";
 import { MapsError } from "@/lib/maps/errors";
 import { buildOpeningMessage, whatsAppHref } from "@/lib/maps/message";
 import { buildLeadDrafts } from "@/lib/maps/qualify";
@@ -186,17 +186,18 @@ export async function collectDigestDrafts(input: {
 
 export function digestBusinessFromDraft(draft: MapsLeadDraft): DigestBusiness | null {
   if (!draft.whatsappE164) return null;
+  const city = commonCityName(draft.city);
   const apertura = buildOpeningMessage({
     name: draft.name,
     specialty: draft.specialty,
-    city: draft.city,
+    city,
     rating: draft.rating,
     userRatingCount: draft.userRatingCount,
   });
   return {
     name: draft.name,
     giro: draft.specialty,
-    city: draft.city,
+    city,
     rating: draft.rating,
     reviews: draft.userRatingCount,
     phone: draft.whatsappE164,
@@ -221,6 +222,7 @@ export function digestBusinessFromStored(lead: {
   business_status: string | null;
 }): DigestBusiness | null {
   if (!lead.whatsapp_e164) return null;
+  const city = commonCityName(lead.city);
   const scored = scoreMapsLead({
     specialty: lead.specialty,
     lead_reason: lead.lead_reason,
@@ -234,17 +236,17 @@ export function digestBusinessFromStored(lead: {
   const apertura = buildOpeningMessage({
     name: lead.name,
     specialty: lead.specialty,
-    city: lead.city,
+    city,
     rating: lead.rating,
     userRatingCount: lead.user_rating_count,
   });
   const mapsUrl =
     lead.google_maps_uri ??
-    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lead.name} ${lead.city}`.trim())}`;
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lead.name} ${city}`.trim())}`;
   return {
     name: lead.name,
     giro: lead.specialty,
-    city: lead.city,
+    city,
     rating: lead.rating,
     reviews: lead.user_rating_count,
     phone: lead.whatsapp_e164,
@@ -257,7 +259,7 @@ export function digestBusinessFromStored(lead: {
 
 function mapsUrl(draft: MapsLeadDraft): string {
   if (draft.googleMapsUri) return draft.googleMapsUri;
-  const query = encodeURIComponent(`${draft.name} ${draft.city}`.trim());
+  const query = encodeURIComponent(`${draft.name} ${commonCityName(draft.city)}`.trim());
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
