@@ -104,7 +104,7 @@ Notarías no entran en el demo de abogado. Un spa o una estética que no son cl�
 
 ## Ciudad
 
-El formulario trae las ciudades grandes (Querétaro queda seleccionada) y la opción «Otra ciudad o estado…» para escribir cualquier ciudad o estado, por ejemplo Jalisco o Playa del Carmen. `CDMX` se busca como Ciudad de México.
+El formulario trae las ciudades grandes (Querétaro queda seleccionada) y la opción «Otra ciudad o estado…» para escribir cualquier ciudad o estado, por ejemplo Jalisco o Playa del Carmen. `CDMX` se busca como Ciudad de México. El nombre que se muestra en Apertura, Seguimiento y en el campo `city` de la lista diaria es el de uso: Heroica Puebla de Zaragoza queda en Puebla, Santiago de Querétaro en Querétaro, y Ciudad de México se conserva. Municipios como Guadalupe o Zapopan se quedan como están.
 
 ## Lista diaria
 

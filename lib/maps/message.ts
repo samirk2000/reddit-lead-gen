@@ -1,4 +1,5 @@
 import { externalDemoUrl } from "@/lib/demo/links";
+import { commonCityName } from "@/lib/maps/cities";
 import { DEFAULT_WHATSAPP_TEMPLATE, OPENING_WHATSAPP_TEMPLATE } from "@/lib/maps/constants";
 import { applyCity, resolveSector } from "@/lib/maps/sectors";
 
@@ -15,7 +16,7 @@ const DEMO_URL_TOKEN = /\{\{\s*demo_url\s*\}\}/i;
 
 export function renderLeadMessage(template: string, lead: MessageLead): string {
   const sector = resolveSector(lead.specialty);
-  const city = lead.city.trim();
+  const city = commonCityName(lead.city);
   const source = city
     ? template
     : template.replace(/\s+en\s+\{\{\s*ciudad\s*\}\}/gi, "");

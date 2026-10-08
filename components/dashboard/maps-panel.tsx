@@ -21,6 +21,7 @@ import {
   CUSTOM_CITY_VALUE,
   DEFAULT_MAPS_CITY,
   MEXICO_CITY_PRESETS,
+  commonCityName,
 } from "@/lib/maps/cities";
 import {
   DEFAULT_WHATSAPP_TEMPLATE,
@@ -107,14 +108,14 @@ export function MapsPanel({
   }, [leads]);
 
   const cities = React.useMemo(() => {
-    return [...new Set(leads.map((lead) => lead.city))].sort((a, b) =>
+    return [...new Set(leads.map((lead) => commonCityName(lead.city)))].sort((a, b) =>
       a.localeCompare(b, "es"),
     );
   }, [leads]);
 
   const scoped = leads.filter((lead) => {
     if (filterSpecialty && lead.specialty !== filterSpecialty) return false;
-    if (filterCity && lead.city !== filterCity) return false;
+    if (filterCity && commonCityName(lead.city) !== filterCity) return false;
     return true;
   });
 
@@ -150,7 +151,7 @@ export function MapsPanel({
       setSummary(result.summary);
       setFilterSpecialty(specialty.trim().replace(/\s+/g, " "));
       const resultCities = [
-        ...new Set((result.leads ?? []).map((lead) => lead.city)),
+        ...new Set((result.leads ?? []).map((lead) => commonCityName(lead.city))),
       ];
       const onlyCity = resultCities.length === 1 ? resultCities[0] : undefined;
       setFilterCity(onlyCity ?? "");
@@ -505,7 +506,7 @@ function LeadCard({
   const leadFields = {
     name: lead.name,
     specialty: lead.specialty,
-    city: lead.city,
+    city: commonCityName(lead.city),
     rating: lead.rating,
     userRatingCount: lead.user_rating_count,
   };
@@ -558,7 +559,7 @@ function LeadCard({
       const result = await personalizeMapsLeadMessage({
         name: lead.name,
         specialty: lead.specialty,
-        city: lead.city,
+        city: commonCityName(lead.city),
         rating: lead.rating,
         userRatingCount: lead.user_rating_count,
         address: lead.address,
@@ -628,7 +629,7 @@ function LeadCard({
               ) : null}
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {lead.specialty} · {lead.city}
+              {lead.specialty} · {commonCityName(lead.city)}
             </p>
             <p className="mt-1 text-sm text-foreground">
               {lead.rating == null

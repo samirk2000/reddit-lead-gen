@@ -6,6 +6,7 @@ import {
   acceptDigestDraft,
   collectDigestDrafts,
   digestBusinessFromDraft,
+  digestBusinessFromStored,
   digestQueries,
   parseDigestRequest,
 } from "@/lib/maps/digest";
@@ -174,5 +175,47 @@ describe("daily list selection", () => {
       acceptDigestDraft({ ...draft, businessStatus: "CLOSED_TEMPORARILY" }, new Set()),
       false,
     );
+  });
+
+  it("publica el nombre corto de la ciudad, también si ya estaba guardado", () => {
+    const { drafts } = buildLeadDrafts(
+      [
+        {
+          id: "pue",
+          displayName: { text: "Dental Centro" },
+          formattedAddress:
+            "Calle 5 Sur 123, Centro Histórico, 72000 Heroica Puebla de Zaragoza, Pue., México",
+          nationalPhoneNumber: "222 000 1122",
+          rating: 4.8,
+          userRatingCount: 40,
+          businessStatus: "OPERATIONAL",
+        },
+      ],
+      "dentista",
+      "Puebla",
+    );
+    const draft = drafts[0];
+    assert.ok(draft);
+    const fresh = digestBusinessFromDraft(draft);
+    assert.equal(fresh?.city, "Puebla");
+    assert.match(fresh?.apertura ?? "", /en Puebla/);
+    assert.equal(fresh?.apertura.includes("Zaragoza"), false);
+
+    const stored = digestBusinessFromStored({
+      name: "Dental Centro",
+      specialty: "dentista",
+      city: "Heroica Puebla de Zaragoza",
+      rating: 4.8,
+      user_rating_count: 40,
+      whatsapp_e164: "522220001122",
+      google_maps_uri: "https://maps.google.com/?cid=1",
+      phone_national: "222 000 1122",
+      phone_international: null,
+      lead_reason: "sin_sitio",
+      business_status: "OPERATIONAL",
+    });
+    assert.equal(stored?.city, "Puebla");
+    assert.match(stored?.apertura ?? "", /en Puebla/);
+    assert.equal(stored?.apertura.includes("Heroica"), false);
   });
 });
