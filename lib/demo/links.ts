@@ -8,6 +8,9 @@ const DEMO_PATH_BY_SLUG: Readonly<Record<string, string>> = {
   dentista: "dentista",
   cocinas: "cocinas",
   abogado: "abogado",
+  "clinica-estetica": "clinica-estetica",
+  constructora: "constructora",
+  "salon-eventos": "salon-eventos",
 };
 
 export function demosBaseUrl(): string {

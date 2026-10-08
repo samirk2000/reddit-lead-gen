@@ -1,4 +1,6 @@
-import { normalizeMexicanWhatsApp } from "@/lib/maps/phone";
+import { resolveBusinessCity } from "@/lib/maps/cities";
+import { bestMexicanPhone } from "@/lib/maps/phone";
+import { scoreProspect } from "@/lib/maps/score";
 import type {
   MapsLeadDraft,
   MapsSearchStats,
@@ -137,26 +139,38 @@ export function buildLeadDrafts(
 
     const phoneInternational = place.internationalPhoneNumber?.trim() || null;
     const phoneNational = place.nationalPhoneNumber?.trim() || null;
+    const phone = bestMexicanPhone(phoneInternational, phoneNational);
     const rating = typeof place.rating === "number" ? place.rating : null;
     const userRatingCount =
       typeof place.userRatingCount === "number" ? place.userRatingCount : null;
+    const businessStatus = place.businessStatus?.trim() || null;
+    const address = place.formattedAddress?.trim() || null;
+    const businessCity = resolveBusinessCity(address, city);
+    const scored = scoreProspect({
+      specialty,
+      leadReason: qualification.reason,
+      rating,
+      reviewCount: userRatingCount,
+      phoneKind: phone.kind,
+      businessStatus,
+    });
 
     drafts.push({
       placeId,
       name: place.displayName?.text?.trim() || "Sin nombre",
-      address: place.formattedAddress?.trim() || null,
+      address,
       phoneNational,
       phoneInternational,
-      whatsappE164: normalizeMexicanWhatsApp(phoneInternational || phoneNational),
+      whatsappE164: phone.e164,
       rating,
       userRatingCount,
       websiteUri: place.websiteUri?.trim() || null,
       googleMapsUri: place.googleMapsUri?.trim() || null,
-      businessStatus: place.businessStatus?.trim() || null,
+      businessStatus,
       specialty,
-      city,
+      city: businessCity,
       leadReason: qualification.reason,
-      priorityScore: priorityScore(rating, userRatingCount),
+      priorityScore: scored.score,
     });
   }
 

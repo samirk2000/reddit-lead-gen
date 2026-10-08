@@ -11,6 +11,7 @@ import {
   mapsDbErrorMessage,
   throwIfMapsSchemaMissing,
 } from "@/lib/maps/errors";
+import { canonicalCityQuery } from "@/lib/maps/cities";
 import { searchPlaces } from "@/lib/maps/places";
 import { personalizeMapsMessage } from "@/lib/maps/personalize";
 import { leadDraftToInsert } from "@/lib/maps/persist";
@@ -70,7 +71,7 @@ export async function searchMapsLeads(
   try {
     const userId = await requireUserId();
     const specialty = normalizeSearchText(specialtyInput);
-    const city = normalizeSearchText(cityInput);
+    const city = canonicalCityQuery(normalizeSearchText(cityInput));
     if (specialty.length < 2 || specialty.length > 80) {
       throw new MapsError(
         "BAD_QUERY",
@@ -128,6 +129,15 @@ export async function searchMapsLeads(
       throwIfMapsSchemaMissing(logError);
     }
 
+    const existingIds = await loadExistingPlaceIds(
+      supabase,
+      userId,
+      drafts.map((draft) => draft.placeId),
+    );
+    const alreadySaved = drafts.filter((draft) =>
+      existingIds.has(draft.placeId),
+    ).length;
+
     let leads: MapsLead[] = [];
     if (drafts.length > 0) {
       const seenAt = new Date().toISOString();
@@ -147,16 +157,16 @@ export async function searchMapsLeads(
         throwIfMapsSchemaMissing(error);
         throw new MapsError("DB", mapsDbErrorMessage(error));
       }
-      leads = data ?? [];
+      leads = (data ?? []).filter((row) => !existingIds.has(row.place_id));
     }
 
-    console.log("[maps] search ok", { query, pages, ...stats });
+    console.log("[maps] search ok", { query, pages, alreadySaved, ...stats });
     revalidatePath(MAPS_PATH);
 
     return {
       ok: true,
-      message: `Se guardaron ${stats.leads} prospectos.`,
-      summary: { query, pages, ...stats },
+      message: savedSearchMessage(stats.leads - alreadySaved, alreadySaved),
+      summary: { query, pages, ...stats, alreadySaved },
       leads,
     };
   } catch (error) {
@@ -364,6 +374,43 @@ export async function personalizeMapsLeadMessage(
   } catch (error) {
     return { ok: false, message: toMapsMessage(error) };
   }
+}
+
+async function loadExistingPlaceIds(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  placeIds: string[],
+): Promise<Set<string>> {
+  const ids = new Set<string>();
+  if (placeIds.length === 0) return ids;
+  const { data, error } = await supabase
+    .from("maps_leads")
+    .select("place_id")
+    .eq("user_id", userId)
+    .in("place_id", placeIds);
+  if (error) {
+    console.error("[maps] existing place lookup failed", {
+      code: error.code,
+      message: error.message,
+    });
+    throwIfMapsSchemaMissing(error);
+    throw new MapsError("DB", mapsDbErrorMessage(error));
+  }
+  for (const row of data ?? []) ids.add(row.place_id);
+  return ids;
+}
+
+function savedSearchMessage(fresh: number, alreadySaved: number): string {
+  const freshText =
+    fresh === 1
+      ? "Se guardó 1 prospecto nuevo."
+      : `Se guardaron ${fresh} prospectos nuevos.`;
+  if (alreadySaved === 0) return freshText;
+  const savedText =
+    alreadySaved === 1
+      ? "1 ya estaba en tu lista y no se volvió a mostrar."
+      : `${alreadySaved} ya estaban en tu lista y no se volvieron a mostrar.`;
+  return `${freshText} ${savedText}`;
 }
 
 function failSearch(error: unknown): MapsSearchResult {

@@ -33,7 +33,9 @@ La búsqueda también puede usar la `GEMINI_API_KEY` que ya tiene la app (o la c
 
 ## Aplicar la migración en Supabase
 
-El archivo es `supabase/migrations/20260925_maps_leads.sql`. Crea `maps_leads`, `maps_settings` y `maps_search_log`, con RLS para que cada usuario solo lea y escriba sus filas.
+El archivo base es `supabase/migrations/20260925_maps_leads.sql`. Crea `maps_leads`, `maps_settings` y `maps_search_log`, con RLS para que cada usuario solo lea y escriba sus filas.
+
+La lista diaria necesita además `supabase/migrations/20261007_maps_digest.sql` (estado `enviado_a_lista` y tabla `maps_digest_log`). Sin ese archivo el endpoint responde que falta la migración.
 
 1. Abre el proyecto en Supabase → **SQL Editor**.
 2. Pega el contenido del archivo y ejecútalo. Se puede volver a correr: usa `if not exists` y recrea las políticas.
@@ -48,8 +50,10 @@ Estados: `nuevo`, `contactado`, `respondió`, `cerrado`, `descartado`.
 - Sin `websiteUri`, o con un valor que no es una URL.
 - O el sitio es solo un perfil: Facebook, Instagram, TikTok, Linktree, `wa.me`, X, YouTube, Telegram, LinkedIn, Google Maps, etc.
 - Se omiten los negocios `CLOSED_PERMANENTLY`.
-- Se deduplica por el id de Google.
-- La prioridad (0–100) sube con la calificación y, en escala logarítmica, con el número de reseñas. Un 5.0 con dos reseñas no le gana a una clínica de 4.7 muy reseñada.
+- Se deduplica por `place_id`.
+- Si el negocio ya está guardado para ese usuario, la búsqueda lo actualiza pero no lo vuelve a mostrar como nuevo.
+- La ciudad del mensaje sale de la dirección de Google cuando se puede leer (por ejemplo «dentista en Monterrey»). Si no, se usa la ciudad que se buscó. No hay una ciudad fija en el texto.
+- La prioridad (0–100) ordena al mejor prospecto primero. Suma el giro (estudio de mercado: dentistas e implantes 89, ortodoncistas 89, abogados 86, carpinteros y cocinas 85, constructoras y arquitectos 83, clínicas estéticas y salones de eventos 83, cirujanos plásticos 81; notarías, barberías y restaurantes van al final), el teléfono (WhatsApp móvil por encima de un número mexicano sin marca de móvil; sin teléfono queda por debajo de quien sí se puede escribir), sin sitio por encima de solo Facebook o Instagram, reseñas de un negocio activo (4.0 o más y al menos 15 reseñas) y si sigue en operación. La tarjeta muestra el número y el motivo.
 
 ## Costo
 
@@ -65,6 +69,8 @@ Precios de referencia (USD, [lista oficial](https://developers.google.com/maps/b
 | Text Search Enterprise + Atmosphere (no lo usamos) | 1,000 | $40 / 1,000 |
 
 Tres páginas = 3 eventos. 1,000 eventos gratis ≈ 333 búsquedas completas al mes por cuenta de facturación de Google, compartidas por todo el proyecto. La app además corta en **30 búsquedas por usuario por hora**.
+
+La lista diaria (`GET /api/maps/daily-list`) no usa ese tope de 30. Tiene el suyo: **máximo 8 llamadas** a Text Search por invocación, **una página** cada una (8 eventos Enterprise). Se detiene antes si ya juntó los prospectos pedidos. Ocho al día, una vez, son 8 de los 1,000 eventos gratis. Si se vuelve a llamar el mismo día sin `city` ni `giros`, responde la lista ya guardada y no llama a Places.
 
 Revisa el uso en Google Cloud → Google Maps Platform → Quotas, y pon una alerta de presupuesto.
 
@@ -87,8 +93,54 @@ Las páginas de ejemplo viven en torioweb.com. Esta app solo guarda el mapa de g
 
 | Demo | Giros |
 |---|---|
-| `https://torioweb.com/ejemplos/dentista/` | dentista, odontólogo, clínica dental, consultorio dental, ortodoncista, ortodoncia |
+| `https://torioweb.com/ejemplos/dentista/` | dentista, odontólogo, clínica dental, consultorio dental, implantes dentales, ortodoncista, ortodoncia |
 | `https://torioweb.com/ejemplos/cocinas/` | carpintería, carpintero, cocinas integrales, cocinas, muebles a medida, closets, mueblería, tienda de muebles |
 | `https://torioweb.com/ejemplos/abogado/` | abogado, abogada, despacho jurídico, bufete, bufete jurídico |
+| `https://torioweb.com/ejemplos/clinica-estetica/` | médico estético, medicina estética, clínica estética, spa médico, cirujano plástico |
+| `https://torioweb.com/ejemplos/constructora/` | constructora, arquitecto, arquitecta, despacho de arquitectura, remodelaciones |
+| `https://torioweb.com/ejemplos/salon-eventos/` | salón de eventos, salón de fiestas, jardín de eventos, quinta |
 
-Notarías no entran en el demo de abogado. Los demás giros no agregan enlace.
+Notarías no entran en el demo de abogado. Un spa o una estética que no son clínica médica tampoco usan el demo de clínica estética. Los demás giros no agregan enlace.
+
+## Ciudad
+
+El formulario trae las ciudades grandes (Querétaro queda seleccionada) y la opción «Otra ciudad o estado…» para escribir cualquier ciudad o estado, por ejemplo Jalisco o Playa del Carmen. `CDMX` se busca como Ciudad de México.
+
+## Lista diaria
+
+`GET /api/maps/daily-list` arma una lista lista para enviar por Telegram.
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $MAPS_DIGEST_SECRET" \
+  "https://reddit-lead-gen.vercel.app/api/maps/daily-list?count=20"
+```
+
+Con filtros:
+
+```bash
+curl -sS \
+  -H "Authorization: Bearer $MAPS_DIGEST_SECRET" \
+  "https://reddit-lead-gen.vercel.app/api/maps/daily-list?count=10&city=Monterrey&giros=dentista,abogado"
+```
+
+- `count`: default 20, máximo 40.
+- `city` y `giros` son opcionales. Sin ellos, cada día (hora de Ciudad de México) recorre otros giros de alto valor y otras ciudades grandes, de 8 búsquedas en 8.
+- Respuesta: `name`, `giro`, `city`, `rating`, `reviews`, `phone` (52 + 10 dígitos), `maps_url`, `score`, `apertura`, `wa_link` (`https://wa.me/<teléfono>?text=<apertura>`).
+- No incluye negocios sin teléfono mexicano, cerrados temporalmente, ya contactados o ya devueltos otro día.
+- Los guarda en `maps_leads` con estado **Enviado a lista**, así aparecen en el dashboard.
+- Dueño de las filas: `REDDIT_INGEST_USER_ID` si hay más de un usuario; si solo hay uno, ese usuario. Misma regla que `/api/reddit-web/ingest`.
+
+Variables nuevas y las que este endpoint necesita en Vercel (Production), sin prefijo `NEXT_PUBLIC_`:
+
+```bash
+MAPS_DIGEST_SECRET=   # openssl rand -base64 32
+GOOGLE_PLACES_API_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_URL=
+# REDDIT_INGEST_USER_ID=  # solo si hay más de un usuario en Auth
+```
+
+Migración, en el SQL Editor, después de `20260925_maps_leads.sql`:
+
+`supabase/migrations/20261007_maps_digest.sql`

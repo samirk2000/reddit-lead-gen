@@ -69,8 +69,9 @@ export default async function MapsLeadsPage() {
           Negocios sin web
         </h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Consultorios y clínicas en Google Maps sin sitio propio. El mensaje
-          se abre en WhatsApp; no se envía solo.
+          Negocios en cualquier ciudad de México, en Google Maps, sin sitio
+          propio. El mensaje usa la ciudad del negocio y se abre en WhatsApp;
+          no se envía solo.
         </p>
       </div>
 

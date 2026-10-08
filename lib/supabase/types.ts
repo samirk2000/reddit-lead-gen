@@ -59,6 +59,7 @@ export type Keyword = {
 /** Pipeline status for a Google Maps prospect (`maps_leads`). */
 export type MapsLeadStatus =
   | "nuevo"
+  | "enviado_a_lista"
   | "contactado"
   | "respondió"
   | "cerrado"
@@ -104,6 +105,21 @@ export type MapsSettings = {
 export type MapsSearchLog = {
   id: string;
   user_id: string;
+  created_at: string;
+};
+
+/**
+ * A business already returned by the daily digest (`maps_digest_log`).
+ * Unique per owner and Google place, so the list does not repeat it.
+ */
+export type MapsDigestSource = "default" | "custom";
+
+export type MapsDigestLog = {
+  id: string;
+  user_id: string;
+  place_id: string;
+  digest_date: string;
+  source: MapsDigestSource;
   created_at: string;
 };
 
@@ -296,6 +312,23 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "maps_search_log_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      maps_digest_log: {
+        Row: MapsDigestLog;
+        Insert: Omit<MapsDigestLog, "id" | "created_at"> & {
+          id?: string;
+          created_at?: string;
+        };
+        Update: Partial<MapsDigestLog>;
+        Relationships: [
+          {
+            foreignKeyName: "maps_digest_log_user_id_fkey";
             columns: ["user_id"];
             isOneToOne: false;
             referencedRelation: "users";
