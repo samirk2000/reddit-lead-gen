@@ -1,6 +1,8 @@
-import { MEXICO_CITY_PRESETS, canonicalCityQuery, commonCityName } from "@/lib/maps/cities";
+import { TODO_MEXICO_CITIES, canonicalCityQuery, commonCityName, isTodoMexico } from "@/lib/maps/cities";
 import { MapsError } from "@/lib/maps/errors";
+import { TOP_TIER_GIROS, demoFirstGiros } from "@/lib/maps/giros";
 import { buildOpeningMessage, whatsAppHref } from "@/lib/maps/message";
+import { isGiroMismatch } from "@/lib/maps/match";
 import { buildLeadDrafts } from "@/lib/maps/qualify";
 import { scoreMapsLead } from "@/lib/maps/score";
 import type { MapsLeadDraft, RawPlace } from "@/lib/maps/types";
@@ -36,7 +38,7 @@ export type DigestRequest = {
 export function parseDigestRequest(params: URLSearchParams): DigestRequest {
   const request: DigestRequest = { count: parseCount(params.get("count")) };
   const city = params.get("city")?.trim().replace(/\s+/g, " ") ?? "";
-  if (city) {
+  if (city && !isTodoMexico(city)) {
     if (city.length < 2 || city.length > 80) {
       throw new MapsError(
         "BAD_QUERY",
@@ -67,20 +69,11 @@ export function parseDigestRequest(params: URLSearchParams): DigestRequest {
   return request;
 }
 
-/** High-ticket giros, in the order the daily rotation prefers. */
-export const DIGEST_GIROS = [
-  "dentista",
-  "implantes dentales",
-  "ortodoncista",
-  "abogado",
-  "carpintero",
-  "cocinas integrales",
-  "constructora",
-  "arquitecto",
-  "clínica estética",
-  "salón de eventos",
-  "cirujano plástico",
-] as const;
+/**
+ * Default daily-list giros: top tier, demo pages first.
+ * Arquitecto has a demo, so it sorts ahead of notaría, contador and inmobiliaria.
+ */
+export const DIGEST_GIROS: readonly string[] = demoFirstGiros(TOP_TIER_GIROS);
 
 export type DigestQuery = {
   specialty: string;
@@ -115,7 +108,7 @@ export function mexicoCityDateISO(now: Date = new Date()): string {
 /**
  * Pairs to search, already rotated for `date` and cut to `limit`.
  * With no city and no giros, each Mexico City day advances eight pairs
- * (the Places cap) through high-ticket giros and the big-city list.
+ * (the Places cap) through top-tier giros (demos first) and the Todo México metros.
  */
 export function digestQueries(options: {
   date: string;
@@ -126,9 +119,10 @@ export function digestQueries(options: {
   const giros = (
     options.giros && options.giros.length > 0 ? options.giros : DIGEST_GIROS
   ).map((giro) => giro.trim().replace(/\s+/g, " ")).filter((giro) => giro.length > 0);
-  const cities = options.city
-    ? [canonicalCityQuery(options.city)]
-    : MEXICO_CITY_PRESETS.map((preset) => preset.query);
+  const cities =
+    options.city && !isTodoMexico(options.city)
+      ? [canonicalCityQuery(options.city)]
+      : [...TODO_MEXICO_CITIES];
   const pairs = interleave(giros, cities);
   if (pairs.length === 0 || options.limit <= 0) return [];
   // Step a full request-cap window each calendar day so tomorrow does not
@@ -139,6 +133,11 @@ export function digestQueries(options: {
   );
   const rotated = [...pairs.slice(offset), ...pairs.slice(0, offset)];
   return rotated.slice(0, options.limit);
+}
+
+/** Saved rows have no Places type, so the name blocklist is the check. */
+export function storedLeadMatchesGiro(lead: { name: string; specialty: string }): boolean {
+  return !isGiroMismatch({ name: lead.name, specialty: lead.specialty });
 }
 
 export function acceptDigestDraft(

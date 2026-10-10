@@ -18,6 +18,8 @@ export const PLACES_FIELD_MASK = [
   "places.websiteUri",
   "places.googleMapsUri",
   "places.businessStatus",
+  "places.primaryType",
+  "places.types",
   "nextPageToken",
 ].join(",");
 

@@ -1,4 +1,5 @@
 import { resolveBusinessCity } from "@/lib/maps/cities";
+import { isGiroMismatch } from "@/lib/maps/match";
 import { bestMexicanPhone } from "@/lib/maps/phone";
 import { scoreProspect } from "@/lib/maps/score";
 import type {
@@ -114,6 +115,7 @@ export function buildLeadDrafts(
     skippedClosed: 0,
     withWebsite: 0,
     duplicates: 0,
+    mismatched: 0,
     leads: 0,
   };
 
@@ -125,6 +127,19 @@ export function buildLeadDrafts(
       continue;
     }
     seen.add(placeId);
+
+    const placeName = place.displayName?.text?.trim() || "";
+    if (
+      isGiroMismatch({
+        name: placeName,
+        specialty,
+        ...(place.primaryType ? { primaryType: place.primaryType } : {}),
+        ...(place.types ? { types: place.types } : {}),
+      })
+    ) {
+      stats.mismatched += 1;
+      continue;
+    }
 
     if (place.businessStatus === "CLOSED_PERMANENTLY") {
       stats.skippedClosed += 1;
@@ -157,7 +172,7 @@ export function buildLeadDrafts(
 
     drafts.push({
       placeId,
-      name: place.displayName?.text?.trim() || "Sin nombre",
+      name: placeName || "Sin nombre",
       address,
       phoneNational,
       phoneInternational,
@@ -175,11 +190,48 @@ export function buildLeadDrafts(
   }
 
   stats.leads = drafts.length;
-  drafts.sort(
-    (a, b) =>
-      b.priorityScore - a.priorityScore ||
-      (b.userRatingCount ?? 0) - (a.userRatingCount ?? 0) ||
-      a.name.localeCompare(b.name, "es"),
-  );
+  drafts.sort(compareDrafts);
   return { drafts, stats };
+}
+
+/** Combines one Places page per city and drops a place seen in more than one. */
+export function mergeLeadBatches(
+  batches: readonly { drafts: MapsLeadDraft[]; stats: MapsSearchStats }[],
+): { drafts: MapsLeadDraft[]; stats: MapsSearchStats } {
+  const stats: MapsSearchStats = {
+    found: 0,
+    skippedClosed: 0,
+    withWebsite: 0,
+    duplicates: 0,
+    mismatched: 0,
+    leads: 0,
+  };
+  const byId = new Map<string, MapsLeadDraft>();
+  for (const batch of batches) {
+    stats.found += batch.stats.found;
+    stats.skippedClosed += batch.stats.skippedClosed;
+    stats.withWebsite += batch.stats.withWebsite;
+    stats.duplicates += batch.stats.duplicates;
+    stats.mismatched += batch.stats.mismatched;
+    for (const draft of batch.drafts) {
+      const existing = byId.get(draft.placeId);
+      if (existing) {
+        stats.duplicates += 1;
+        if (draft.priorityScore > existing.priorityScore) byId.set(draft.placeId, draft);
+        continue;
+      }
+      byId.set(draft.placeId, draft);
+    }
+  }
+  const drafts = [...byId.values()].sort(compareDrafts);
+  stats.leads = drafts.length;
+  return { drafts, stats };
+}
+
+function compareDrafts(a: MapsLeadDraft, b: MapsLeadDraft): number {
+  return (
+    b.priorityScore - a.priorityScore ||
+    (b.userRatingCount ?? 0) - (a.userRatingCount ?? 0) ||
+    a.name.localeCompare(b.name, "es")
+  );
 }

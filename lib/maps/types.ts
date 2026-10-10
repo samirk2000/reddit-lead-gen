@@ -37,6 +37,7 @@ export type MapsSearchStats = {
   skippedClosed: number;
   withWebsite: number;
   duplicates: number;
+  mismatched: number;
   leads: number;
 };
 
@@ -59,4 +60,7 @@ export type RawPlace = {
   websiteUri?: string;
   googleMapsUri?: string;
   businessStatus?: string;
+  /** Places primary type, e.g. "lawyer" or "restaurant". */
+  primaryType?: string;
+  types?: string[];
 };

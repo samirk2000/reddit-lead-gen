@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  MAX_PLACE_PAGES,
+} from "@/lib/maps/constants";
+import {
+  TODO_MEXICO_CITIES,
+  TODO_MEXICO_CITIES_PER_SEARCH,
+  TODO_MEXICO_VALUE,
   canonicalCityQuery,
   commonCityName,
   extractMexicanCity,
+  isTodoMexico,
   resolveBusinessCity,
+  todoMexicoSearchCities,
 } from "@/lib/maps/cities";
+import { DEFAULT_GIRO, GIRO_CHIPS, cityHintForGiro, demoFirstGiros, giroHasDemo } from "@/lib/maps/giros";
+import { isGiroMismatch } from "@/lib/maps/match";
 import { PLACES_FIELD_MASK, searchPlaces } from "@/lib/maps/places";
 import { leadDraftToInsert } from "@/lib/maps/persist";
 import {
@@ -18,6 +28,7 @@ import { buildOpeningMessage, renderLeadMessage, whatsAppHref } from "@/lib/maps
 import {
   buildLeadDrafts,
   isSocialWebsite,
+  mergeLeadBatches,
   priorityScore,
   qualifyWebsite,
 } from "@/lib/maps/qualify";
@@ -387,6 +398,8 @@ describe("searchPlaces", () => {
       const headers = new Headers(init?.headers);
       assert.equal(headers.get("X-Goog-FieldMask"), PLACES_FIELD_MASK);
       assert.equal(PLACES_FIELD_MASK.includes("places.reviews"), false);
+      assert.equal(PLACES_FIELD_MASK.includes("places.primaryType"), true);
+      assert.equal(PLACES_FIELD_MASK.includes("places.types"), true);
       assert.equal(headers.get("X-Goog-Api-Key"), "secret-key");
       const current = bodies[index];
       index += 1;
@@ -438,5 +451,178 @@ describe("searchPlaces", () => {
         return true;
       },
     );
+  });
+});
+
+describe("giro chips", () => {
+  it("empieza por abogado y marca quién tiene demo", () => {
+    assert.equal(DEFAULT_GIRO, "abogado");
+    assert.equal(GIRO_CHIPS[0]?.query, "abogado");
+    assert.equal(GIRO_CHIPS[0]?.tier, "alta");
+    assert.deepEqual(
+      GIRO_CHIPS.filter((chip) => chip.tier === "alta").map((chip) => chip.query),
+      [
+        "abogado",
+        "clínica estética",
+        "médico estético",
+        "salón de eventos",
+        "constructora",
+        "cocinas integrales",
+        "notaría",
+        "contador",
+        "arquitecto",
+        "inmobiliaria",
+      ],
+    );
+    assert.equal(giroHasDemo("abogado"), true);
+    assert.equal(giroHasDemo("clínica estética"), true);
+    assert.equal(giroHasDemo("cocinas integrales"), true);
+    assert.equal(giroHasDemo("arquitecto"), true);
+    assert.equal(giroHasDemo("dentista"), true);
+    assert.equal(giroHasDemo("cirujano plástico"), true);
+    assert.equal(giroHasDemo("notaría"), false);
+    assert.equal(giroHasDemo("contador"), false);
+    assert.equal(giroHasDemo("inmobiliaria"), false);
+    assert.equal(giroHasDemo("colegio"), false);
+    assert.deepEqual(cityHintForGiro("abogado"), ["Monterrey", "Guadalajara", "CDMX"]);
+    assert.equal(cityHintForGiro("dentista"), null);
+    const ordered = demoFirstGiros(
+      GIRO_CHIPS.filter((chip) => chip.tier === "alta").map((chip) => chip.query),
+    );
+    assert.ok(ordered.indexOf("arquitecto") < ordered.indexOf("notaría"));
+    assert.equal(ordered[0], "abogado");
+  });
+});
+
+describe("todo mexico rotation", () => {
+  it("toma 3 ciudades y la siguiente búsqueda no las repite", () => {
+    assert.ok(TODO_MEXICO_CITIES_PER_SEARCH <= MAX_PLACE_PAGES);
+    assert.equal(TODO_MEXICO_CITIES_PER_SEARCH, 3);
+    assert.equal(isTodoMexico(TODO_MEXICO_VALUE), true);
+    assert.equal(isTodoMexico("Todo México"), true);
+    assert.equal(isTodoMexico("Querétaro"), false);
+
+    const first = todoMexicoSearchCities(0);
+    const second = todoMexicoSearchCities(1);
+    const wrapped = todoMexicoSearchCities(TODO_MEXICO_CITIES.length / TODO_MEXICO_CITIES_PER_SEARCH);
+    assert.deepEqual(first, ["Ciudad de México", "Monterrey", "Guadalajara"]);
+    assert.deepEqual(second, ["Querétaro", "Puebla", "León"]);
+    assert.equal(first.some((city) => second.includes(city)), false);
+    assert.deepEqual(wrapped, first);
+    assert.ok(first.length * 1 <= MAX_PLACE_PAGES);
+  });
+});
+
+describe("giro mismatch", () => {
+  it("quita taquerías y abarrotes cuando el giro no es comida", () => {
+    assert.equal(
+      isGiroMismatch({
+        name: "Taquería Los Abogados",
+        specialty: "abogado",
+        primaryType: "restaurant",
+        types: ["restaurant", "food", "point_of_interest"],
+      }),
+      true,
+    );
+    assert.equal(
+      isGiroMismatch({
+        name: "García y Asociados",
+        specialty: "abogado",
+        primaryType: "restaurant",
+      }),
+      true,
+    );
+    assert.equal(
+      isGiroMismatch({
+        name: "Taquería Los Abogados",
+        specialty: "abogado",
+      }),
+      true,
+    );
+    assert.equal(
+      isGiroMismatch({
+        name: "Abarrotes López",
+        specialty: "abogado",
+      }),
+      true,
+    );
+    assert.equal(
+      isGiroMismatch({
+        name: "Cocina Económica Don Pepe",
+        specialty: "dentista",
+      }),
+      true,
+    );
+    assert.equal(
+      isGiroMismatch({
+        name: "Bufete García",
+        specialty: "abogado",
+        primaryType: "lawyer",
+      }),
+      false,
+    );
+    assert.equal(
+      isGiroMismatch({
+        name: "Barbería Ramírez",
+        specialty: "abogado",
+      }),
+      false,
+    );
+    assert.equal(
+      isGiroMismatch({
+        name: "Cocinas Integrales López",
+        specialty: "cocinas integrales",
+        primaryType: "furniture_store",
+      }),
+      false,
+    );
+    assert.equal(
+      isGiroMismatch({
+        name: "Taquería El Puerto",
+        specialty: "restaurante",
+        primaryType: "restaurant",
+      }),
+      false,
+    );
+
+    const { drafts, stats } = buildLeadDrafts(
+      [
+        {
+          id: "taco",
+          displayName: { text: "Taquería Los Abogados" },
+          primaryType: "restaurant",
+          types: ["restaurant", "food"],
+          nationalPhoneNumber: "818 000 1122",
+        },
+        {
+          id: "firma",
+          displayName: { text: "Bufete García" },
+          primaryType: "lawyer",
+          formattedAddress: "Av. Constitución 100, Centro, Monterrey, N.L., 64000, México",
+          nationalPhoneNumber: "818 000 3344",
+        },
+      ],
+      "abogado",
+      "Ciudad de México",
+    );
+    assert.equal(stats.mismatched, 1);
+    assert.equal(drafts.length, 1);
+    assert.equal(drafts[0]?.placeId, "firma");
+    assert.equal(drafts[0]?.city, "Monterrey");
+
+    const merged = mergeLeadBatches([
+      buildLeadDrafts(
+        [{ id: "firma", displayName: { text: "Bufete García" }, primaryType: "lawyer" }],
+        "abogado",
+        "Monterrey",
+      ),
+      buildLeadDrafts(
+        [{ id: "firma", displayName: { text: "Bufete García" }, primaryType: "lawyer" }],
+        "abogado",
+        "Guadalajara",
+      ),
+    ]);
+    assert.equal(merged.drafts.length, 1);
+    assert.equal(merged.stats.duplicates, 1);
   });
 });
