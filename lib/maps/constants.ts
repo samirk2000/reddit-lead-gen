@@ -1,18 +1,5 @@
 import type { MapsLeadReason, MapsLeadStatus } from "@/lib/supabase/types";
 
-export const SPECIALTY_PRESETS = [
-  "dentista",
-  "dermatólogo",
-  "cirujano plástico",
-  "ortodoncista",
-  "veterinario",
-  "odontólogo",
-  "médico estético",
-  "nutriólogo",
-  "oftalmólogo",
-  "fisioterapeuta",
-] as const;
-
 export const STATUS_LABELS: Record<MapsLeadStatus, string> = {
   nuevo: "Nuevo",
   enviado_a_lista: "Enviado a lista",

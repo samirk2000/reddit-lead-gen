@@ -6,6 +6,63 @@ export const DEFAULT_MAPS_CITY = "Querétaro";
 /** Select value that reveals a free-text city or state. */
 export const CUSTOM_CITY_VALUE = "__otra__";
 
+/** Select value that searches several large cities, one page each. */
+export const TODO_MEXICO_VALUE = "__mexico__";
+
+/**
+ * Largest / higher-income metros for "Todo México".
+ * One search takes {@link TODO_MEXICO_CITIES_PER_SEARCH} of these, one page
+ * each, so it stays inside the 3-page Places cap. The next search starts
+ * further down the list.
+ */
+export const TODO_MEXICO_CITIES = [
+  "Ciudad de México",
+  "Monterrey",
+  "Guadalajara",
+  "Querétaro",
+  "Puebla",
+  "León",
+  "Mérida",
+  "Tijuana",
+  "San Luis Potosí",
+  "Aguascalientes",
+  "Cancún",
+  "Chihuahua",
+] as const;
+
+/** Cities hit by one nationwide search. 1 page each, so this is also the page cap. */
+export const TODO_MEXICO_CITIES_PER_SEARCH = 3;
+
+export function isTodoMexico(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === TODO_MEXICO_VALUE) return true;
+  return normalizeSectorKey(trimmed) === "todo mexico";
+}
+
+/**
+ * Next window of metros. `searchCount` is how many searches this user has
+ * already logged, so each new search moves three cities ahead without a
+ * new table.
+ */
+export function todoMexicoSearchCities(searchCount: number): string[] {
+  const length = TODO_MEXICO_CITIES.length;
+  const take = Math.min(TODO_MEXICO_CITIES_PER_SEARCH, length);
+  if (take <= 0) return [];
+  const start = positiveMod(searchCount * take, length);
+  const cities: string[] = [];
+  for (let index = 0; index < take; index += 1) {
+    const city = TODO_MEXICO_CITIES[(start + index) % length];
+    if (city) cities.push(city);
+  }
+  return cities;
+}
+
+function positiveMod(value: number, length: number): number {
+  if (length <= 0) return 0;
+  const safe = Number.isFinite(value) ? Math.trunc(value) : 0;
+  return ((safe % length) + length) % length;
+}
+
 /**
  * Large Mexican cities. `query` is what we send to Places and, when the
  * address does not name a finer city, what the WhatsApp copy uses.

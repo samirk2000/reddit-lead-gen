@@ -2,7 +2,7 @@
  * Outreach copy by giro.
  *
  * `maps_leads.specialty` is the search keyword the operator typed (see
- * `SPECIALTY_PRESETS` and `searchMapsLeads`), not a Google Places type.
+ * `GIRO_CHIPS` and `searchMapsLeads`), not a Google Places type.
  * Keys are matched without accents, case, or a trailing Spanish plural.
  */
 
@@ -278,6 +278,7 @@ add(
     "contador",
     { key: "contadora", busqueda: "contadora" },
     { key: "contador público", busqueda: "contador" },
+    { key: "despacho contable", busqueda: "contador" },
   ],
 );
 

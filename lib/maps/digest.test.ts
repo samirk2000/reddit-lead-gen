@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { TODO_MEXICO_CITIES } from "@/lib/maps/cities";
 import {
   DIGEST_DEFAULT_COUNT,
+  DIGEST_GIROS,
   DIGEST_PLACES_REQUEST_CAP,
   acceptDigestDraft,
   collectDigestDrafts,
@@ -9,7 +11,9 @@ import {
   digestBusinessFromStored,
   digestQueries,
   parseDigestRequest,
+  storedLeadMatchesGiro,
 } from "@/lib/maps/digest";
+import { giroHasDemo } from "@/lib/maps/giros";
 import { buildLeadDrafts } from "@/lib/maps/qualify";
 import type { MapsLeadDraft } from "@/lib/maps/types";
 
@@ -40,6 +44,17 @@ describe("daily list plan", () => {
       }),
       [{ specialty: "abogado", city: "León" }],
     );
+
+    const nationwide = digestQueries({ date: "2026-10-07", limit: 8 });
+    assert.ok(nationwide.every((query) => TODO_MEXICO_CITIES.includes(query.city as (typeof TODO_MEXICO_CITIES)[number])));
+    assert.ok(nationwide.every((query) => DIGEST_GIROS.includes(query.specialty)));
+    assert.equal(nationwide.some((query) => query.city === "Hermosillo"), false);
+    assert.equal(DIGEST_GIROS[0], "abogado");
+    assert.equal(DIGEST_GIROS.includes("dentista"), false);
+    assert.ok(DIGEST_GIROS.indexOf("arquitecto") < DIGEST_GIROS.indexOf("notaría"));
+    const notariaAt = DIGEST_GIROS.indexOf("notaría");
+    assert.ok(DIGEST_GIROS.slice(0, notariaAt).every((giro) => giroHasDemo(giro)));
+    assert.equal(parseDigestRequest(new URLSearchParams("city=Todo México")).city, undefined);
   });
 
   it("lee count, city y giros", () => {
@@ -217,5 +232,43 @@ describe("daily list selection", () => {
     assert.equal(stored?.city, "Puebla");
     assert.match(stored?.apertura ?? "", /en Puebla/);
     assert.equal(stored?.apertura.includes("Heroica"), false);
+
+    assert.equal(
+      storedLeadMatchesGiro({ name: "Taquería Los Abogados", specialty: "abogado" }),
+      false,
+    );
+    assert.equal(storedLeadMatchesGiro({ name: "Bufete García", specialty: "abogado" }), true);
+  });
+
+  it("no mete en la lista un negocio de otro giro", async () => {
+    const { drafts } = await collectDigestDrafts({
+      queries: [{ specialty: "abogado", city: "Monterrey" }],
+      excludedPlaceIds: new Set(),
+      maxRequests: 1,
+      targetCount: 5,
+      search: async () => ({
+        pages: 1,
+        places: [
+          {
+            id: "taco",
+            displayName: { text: "Taquería Los Abogados" },
+            primaryType: "restaurant",
+            nationalPhoneNumber: "818 000 1122",
+          },
+          {
+            id: "firma",
+            displayName: { text: "Bufete García" },
+            primaryType: "lawyer",
+            nationalPhoneNumber: "818 000 3344",
+            formattedAddress: "Centro, Monterrey, N.L., México",
+          },
+        ],
+      }),
+    });
+    assert.deepEqual(
+      drafts.map((draft) => draft.placeId),
+      ["firma"],
+    );
+    assert.equal(drafts[0]?.city, "Monterrey");
   });
 });

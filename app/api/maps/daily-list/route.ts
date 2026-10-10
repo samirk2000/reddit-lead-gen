@@ -6,6 +6,7 @@ import {
   collectDigestDrafts,
   digestBusinessFromStored,
   digestQueries,
+  storedLeadMatchesGiro,
   mexicoCityDateISO,
   parseDigestRequest,
   type DigestBusiness,
@@ -198,6 +199,8 @@ async function loadCachedBusinesses(
   }
 
   return leads.flatMap((lead) => {
+    if (lead.status === "descartado") return [];
+    if (!storedLeadMatchesGiro(lead)) return [];
     const business = digestBusinessFromStored(lead);
     return business ? [business] : [];
   });

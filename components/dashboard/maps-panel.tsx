@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Copy, ExternalLink, MessageCircle, Sparkles } from "lucide-react";
 import {
+  discardMismatchedMapsLeads,
   markMapsLeadContacted,
   personalizeMapsLeadMessage,
   saveMapsTemplate,
@@ -21,17 +22,25 @@ import {
   CUSTOM_CITY_VALUE,
   DEFAULT_MAPS_CITY,
   MEXICO_CITY_PRESETS,
+  TODO_MEXICO_VALUE,
   commonCityName,
 } from "@/lib/maps/cities";
 import {
   DEFAULT_WHATSAPP_TEMPLATE,
   OPENING_WHATSAPP_TEMPLATE,
   REASON_LABELS,
-  SPECIALTY_PRESETS,
   STATUS_LABELS,
   STATUS_SORT,
   TEMPLATE_TOKENS,
 } from "@/lib/maps/constants";
+import {
+  DEFAULT_GIRO,
+  GIRO_CHIPS,
+  cityHintForGiro,
+  giroHasDemo,
+  type GiroChip,
+} from "@/lib/maps/giros";
+import { normalizeSectorKey } from "@/lib/maps/sectors";
 import { scoreMapsLead } from "@/lib/maps/score";
 import {
   buildFollowUpMessage,
@@ -70,7 +79,7 @@ function mergeLeads(current: MapsLead[], incoming: MapsLead[]): MapsLead[] {
 }
 
 const selectClass =
-  "flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "flex h-11 w-full rounded-md border border-border bg-background px-3 text-base text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-10 sm:text-sm";
 
 export function MapsPanel({
   initialLeads,
@@ -80,8 +89,9 @@ export function MapsPanel({
 }: MapsPanelProps) {
   const { toast } = useToast();
   const [leads, setLeads] = React.useState(() => sortLeads(initialLeads));
-  const [specialty, setSpecialty] = React.useState("dentista");
+  const [specialty, setSpecialty] = React.useState(DEFAULT_GIRO);
   const [cityChoice, setCityChoice] = React.useState(DEFAULT_MAPS_CITY);
+  const [discarding, setDiscarding] = React.useState(false);
   const [customCity, setCustomCity] = React.useState("");
   const city = cityChoice === CUSTOM_CITY_VALUE ? customCity : cityChoice;
   const [searching, setSearching] = React.useState(false);
@@ -166,6 +176,33 @@ export function MapsPanel({
     }
   }
 
+  async function onDiscardMismatches() {
+    setDiscarding(true);
+    try {
+      const result = await discardMismatchedMapsLeads();
+      if (!result.ok) {
+        toast(result.message, "error");
+        return;
+      }
+      if (result.ids.length > 0) {
+        const discarded = new Set(result.ids);
+        setLeads((current) =>
+          sortLeads(
+            current.map((lead) =>
+              discarded.has(lead.id) ? { ...lead, status: "descartado" } : lead,
+            ),
+          ),
+        );
+      }
+      toast(result.message, "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast(message, "error");
+    } finally {
+      setDiscarding(false);
+    }
+  }
+
   async function onSaveTemplate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSavingTemplate(true);
@@ -197,10 +234,11 @@ export function MapsPanel({
                   id="maps-specialty"
                   value={specialty}
                   onChange={(event) => setSpecialty(event.target.value)}
-                  placeholder="dentista"
+                  placeholder="abogado"
                   maxLength={80}
                   required
                   disabled={!schemaReady}
+                  className="text-base sm:text-sm"
                   onInvalid={(event) =>
                     event.currentTarget.setCustomValidity(
                       "Escribe un giro o palabra clave.",
@@ -218,6 +256,7 @@ export function MapsPanel({
                   disabled={!schemaReady}
                   onChange={(event) => setCityChoice(event.target.value)}
                 >
+                  <option value={TODO_MEXICO_VALUE}>Todo México</option>
                   {MEXICO_CITY_PRESETS.map((preset) => (
                     <option key={preset.query} value={preset.query}>
                       {preset.label}
@@ -234,6 +273,7 @@ export function MapsPanel({
                     maxLength={80}
                     required
                     disabled={!schemaReady}
+                    className="text-base sm:text-sm"
                     aria-label="Otra ciudad o estado"
                     onInvalid={(event) =>
                       event.currentTarget.setCustomValidity(
@@ -246,34 +286,20 @@ export function MapsPanel({
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Giros frecuentes">
-              {SPECIALTY_PRESETS.map((preset) => {
-                const active = specialty.trim().toLowerCase() === preset;
-                return (
-                  <button
-                    key={preset}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setSpecialty(preset)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-sm",
-                      active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-                    )}
-                  >
-                    {preset}
-                  </button>
-                );
-              })}
-            </div>
+            <GiroChips
+              specialty={specialty}
+              onSelect={setSpecialty}
+              disabled={!schemaReady}
+            />
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm leading-6 text-muted-foreground">
-                Cada búsqueda consulta Google Places (hasta 3 páginas, tope de
-                30 por hora) en la ciudad o el estado que elijas. Solo se
-                guardan negocios sin sitio, o cuyo sitio es una red social. Los
-                que ya estaban en tu lista no se vuelven a mostrar; conservan
+                {cityChoice === TODO_MEXICO_VALUE
+                  ? "Todo México usa 1 página en 3 ciudades grandes y rota en la siguiente búsqueda. Sigue dentro del tope de 3 páginas y 30 búsquedas por hora."
+                  : "Cada búsqueda consulta Google Places (hasta 3 páginas, tope de 30 por hora) en la ciudad o el estado que elijas."}{" "}
+                Solo se guardan negocios sin sitio, o cuyo sitio es una red
+                social, y se omiten los que no coinciden con el giro. Los que
+                ya estaban en tu lista no se vuelven a mostrar; conservan
                 estado y notas. El mensaje usa la ciudad del negocio.
               </p>
               <Button
@@ -307,6 +333,9 @@ export function MapsPanel({
               {summary.duplicates > 0
                 ? `. ${summary.duplicates} salieron repetidos`
                 : ""}
+              {summary.mismatched > 0
+                ? `. ${summary.mismatched} ${summary.mismatched === 1 ? "descartado" : "descartados"} por no coincidir con el giro`
+                : ""}
               . Los que ya estaban en la lista conservan su estado y sus notas.
             </p>
           ) : null}
@@ -314,6 +343,23 @@ export function MapsPanel({
       </Card>
 
       <section aria-label="Prospectos guardados" className="space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Si ya guardaste una taquería u otro negocio que no es el giro, márcalo como descartado. No toca contactados ni cerrados.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            disabled={!schemaReady || discarding || leads.length === 0}
+            onClick={() => {
+              void onDiscardMismatches();
+            }}
+          >
+            {discarding ? <Spinner /> : null}
+            {discarding ? "Revisando…" : "Descartar los que no coinciden"}
+          </Button>
+        </div>
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar por estado">
           <FilterChip
             active={status === ""}
@@ -453,6 +499,101 @@ export function MapsPanel({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function GiroChips({
+  specialty,
+  onSelect,
+  disabled,
+}: {
+  specialty: string;
+  onSelect: (query: string) => void;
+  disabled: boolean;
+}) {
+  const selected = normalizeSectorKey(specialty);
+  const hint = cityHintForGiro(specialty);
+  const alta = GIRO_CHIPS.filter((chip) => chip.tier === "alta");
+  const media = GIRO_CHIPS.filter((chip) => chip.tier === "media");
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="mb-2 flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+          <Badge variant="warning">🔥 Alta probabilidad</Badge>
+        </p>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Giros con alta probabilidad">
+          {alta.map((chip) => (
+            <GiroChipButton
+              key={chip.query}
+              chip={chip}
+              active={selected === normalizeSectorKey(chip.query)}
+              disabled={disabled}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+        {hint ? (
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Mejor en: {hint.join(", ")}
+          </p>
+        ) : null}
+      </div>
+      <div>
+        <p className="mb-2 text-sm font-medium text-muted-foreground">Buena probabilidad</p>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Otros giros">
+          {media.map((chip) => (
+            <GiroChipButton
+              key={chip.query}
+              chip={chip}
+              active={selected === normalizeSectorKey(chip.query)}
+              disabled={disabled}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GiroChipButton({
+  chip,
+  active,
+  disabled,
+  onSelect,
+}: {
+  chip: GiroChip;
+  active: boolean;
+  disabled: boolean;
+  onSelect: (query: string) => void;
+}) {
+  const demo = giroHasDemo(chip.query);
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={() => onSelect(chip.query)}
+      className={cn(
+        "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-2 text-sm",
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+        disabled && "opacity-50",
+      )}
+    >
+      <span>{chip.query}</span>
+      {demo ? (
+        <span
+          className={cn(
+            "rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+            active ? "bg-primary-foreground/15" : "bg-muted text-foreground",
+          )}
+        >
+          Demo
+        </span>
+      ) : null}
+    </button>
   );
 }
 

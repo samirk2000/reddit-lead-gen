@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import {
   MAPS_SEARCHES_PER_HOUR,
+  MAX_PLACE_PAGES,
   MISSING_PLACES_KEY_MESSAGE,
 } from "@/lib/maps/constants";
 import {
@@ -11,11 +12,16 @@ import {
   mapsDbErrorMessage,
   throwIfMapsSchemaMissing,
 } from "@/lib/maps/errors";
-import { canonicalCityQuery } from "@/lib/maps/cities";
+import {
+  canonicalCityQuery,
+  isTodoMexico,
+  todoMexicoSearchCities,
+} from "@/lib/maps/cities";
+import { isGiroMismatch } from "@/lib/maps/match";
 import { searchPlaces } from "@/lib/maps/places";
 import { personalizeMapsMessage } from "@/lib/maps/personalize";
 import { leadDraftToInsert } from "@/lib/maps/persist";
-import { buildLeadDrafts, normalizeSearchText } from "@/lib/maps/qualify";
+import { buildLeadDrafts, mergeLeadBatches, normalizeSearchText } from "@/lib/maps/qualify";
 import { isMapsLeadStatus } from "@/lib/maps/types";
 import type { MapsSearchSummary } from "@/lib/maps/types";
 import { createClient } from "@/lib/supabase/server";
@@ -71,14 +77,15 @@ export async function searchMapsLeads(
   try {
     const userId = await requireUserId();
     const specialty = normalizeSearchText(specialtyInput);
-    const city = canonicalCityQuery(normalizeSearchText(cityInput));
+    const nationwide = isTodoMexico(cityInput);
+    const city = nationwide ? "" : canonicalCityQuery(normalizeSearchText(cityInput));
     if (specialty.length < 2 || specialty.length > 80) {
       throw new MapsError(
         "BAD_QUERY",
         "Escribe un giro o palabra clave (2 a 80 caracteres).",
       );
     }
-    if (city.length < 2 || city.length > 80) {
+    if (!nationwide && (city.length < 2 || city.length > 80)) {
       throw new MapsError(
         "BAD_QUERY",
         "Escribe una ciudad o zona (2 a 80 caracteres).",
@@ -114,9 +121,34 @@ export async function searchMapsLeads(
       );
     }
 
-    const query = `${specialty} en ${city}`;
-    const { places, pages } = await searchPlaces(query, apiKey);
-    const { drafts, stats } = buildLeadDrafts(places, specialty, city);
+    const searchedCities = nationwide
+      ? todoMexicoSearchCities(await countSearches(supabase, userId))
+      : [city];
+    if (searchedCities.length === 0 || searchedCities.length > MAX_PLACE_PAGES) {
+      throw new MapsError(
+        "BAD_QUERY",
+        "Todo México no pudo armar una ventana de ciudades dentro del tope de páginas.",
+      );
+    }
+
+    const pagesPerCity = nationwide ? 1 : MAX_PLACE_PAGES;
+    const batches: Array<ReturnType<typeof buildLeadDrafts>> = [];
+    let pages = 0;
+    for (const searchedCity of searchedCities) {
+      const textQuery = `${specialty} en ${searchedCity}`;
+      const result = await searchPlaces(textQuery, apiKey, fetch, {
+        maxPages: pagesPerCity,
+      });
+      pages += result.pages;
+      batches.push(buildLeadDrafts(result.places, specialty, searchedCity));
+    }
+    if (pages > MAX_PLACE_PAGES) {
+      console.error("[maps] page cap exceeded", { pages, searchedCities });
+    }
+    const { drafts, stats } = mergeLeadBatches(batches);
+    const query = nationwide
+      ? `${specialty} en Todo México (${searchedCities.join(", ")})`
+      : `${specialty} en ${city}`;
 
     const { error: logError } = await supabase
       .from("maps_search_log")
@@ -376,6 +408,102 @@ export async function personalizeMapsLeadMessage(
   }
 }
 
+export type MapsDiscardMismatchResult = {
+  ok: boolean;
+  message: string;
+  discarded: number;
+  ids: string[];
+};
+
+/**
+ * One-off cleanup: leads already saved whose name is a food stand, grocery
+ * or similar, while the giro is a professional service, become Descartado.
+ * Contacted and closed rows are left alone. The daily list also skips them.
+ */
+export async function discardMismatchedMapsLeads(): Promise<MapsDiscardMismatchResult> {
+  try {
+    const userId = await requireUserId();
+    const supabase = await createClient(cookies());
+    const ids: string[] = [];
+    const pageSize = 1000;
+    for (let from = 0; from < 20_000; from += pageSize) {
+      const { data, error } = await supabase
+        .from("maps_leads")
+        .select("id, name, specialty, status")
+        .eq("user_id", userId)
+        .in("status", ["nuevo", "enviado_a_lista"])
+        .range(from, from + pageSize - 1);
+      if (error) {
+        console.error("[maps] mismatch scan failed", {
+          code: error.code,
+          message: error.message,
+        });
+        throwIfMapsSchemaMissing(error);
+        throw new MapsError("DB", mapsDbErrorMessage(error));
+      }
+      for (const row of data ?? []) {
+        if (isGiroMismatch({ name: row.name, specialty: row.specialty })) {
+          ids.push(row.id);
+        }
+      }
+      if ((data?.length ?? 0) < pageSize) break;
+    }
+
+    const updatedAt = new Date().toISOString();
+    for (let index = 0; index < ids.length; index += 100) {
+      const slice = ids.slice(index, index + 100);
+      const { error } = await supabase
+        .from("maps_leads")
+        .update({ status: "descartado", updated_at: updatedAt })
+        .eq("user_id", userId)
+        .in("id", slice)
+        .in("status", ["nuevo", "enviado_a_lista"]);
+      if (error) {
+        console.error("[maps] mismatch discard failed", {
+          code: error.code,
+          message: error.message,
+        });
+        throwIfMapsSchemaMissing(error);
+        throw new MapsError("DB", mapsDbErrorMessage(error));
+      }
+    }
+
+    revalidatePath(MAPS_PATH);
+    return {
+      ok: true,
+      discarded: ids.length,
+      ids,
+      message: discardMismatchMessage(ids.length),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof MapsError ? error.message : toMapsMessage(error),
+      discarded: 0,
+      ids: [],
+    };
+  }
+}
+
+async function countSearches(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<number> {
+  const { count: total, error } = await supabase
+    .from("maps_search_log")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (error) {
+    console.error("[maps] rotation count failed", {
+      code: error.code,
+      message: error.message,
+    });
+    throwIfMapsSchemaMissing(error);
+    throw new MapsError("DB", mapsDbErrorMessage(error));
+  }
+  return total ?? 0;
+}
+
 async function loadExistingPlaceIds(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
@@ -398,6 +526,16 @@ async function loadExistingPlaceIds(
   }
   for (const row of data ?? []) ids.add(row.place_id);
   return ids;
+}
+
+function discardMismatchMessage(discarded: number): string {
+  if (discarded === 0) {
+    return "No había prospectos nuevos cuyo nombre no coincide con el giro.";
+  }
+  if (discarded === 1) {
+    return "Se marcó 1 prospecto como descartado porque el nombre no coincide con el giro.";
+  }
+  return `Se marcaron ${discarded} prospectos como descartados porque el nombre no coincide con el giro.`;
 }
 
 function savedSearchMessage(fresh: number, alreadySaved: number): string {

@@ -104,7 +104,15 @@ Notarías no entran en el demo de abogado. Un spa o una estética que no son cl�
 
 ## Ciudad
 
-El formulario trae las ciudades grandes (Querétaro queda seleccionada) y la opción «Otra ciudad o estado…» para escribir cualquier ciudad o estado, por ejemplo Jalisco o Playa del Carmen. `CDMX` se busca como Ciudad de México. El nombre que se muestra en Apertura, Seguimiento y en el campo `city` de la lista diaria es el de uso: Heroica Puebla de Zaragoza queda en Puebla, Santiago de Querétaro en Querétaro, y Ciudad de México se conserva. Municipios como Guadalupe o Zapopan se quedan como están.
+El formulario trae las ciudades grandes (Querétaro queda seleccionada), **Todo México** y la opción «Otra ciudad o estado…» para escribir cualquier ciudad o estado, por ejemplo Jalisco o Playa del Carmen. `CDMX` se busca como Ciudad de México. El nombre que se muestra en Apertura, Seguimiento y en el campo `city` de la lista diaria es el de uso: Heroica Puebla de Zaragoza queda en Puebla, Santiago de Querétaro en Querétaro, y Ciudad de México se conserva. Municipios como Guadalupe o Zapopan se quedan como están.
+
+**Todo México** reparte una búsqueda en tres metros (Ciudad de México, Monterrey, Guadalajara, Querétaro, Puebla, León, Mérida, Tijuana, San Luis Potosí, Aguascalientes, Cancún, Chihuahua), una página por ciudad. La siguiente búsqueda empieza tres ciudades más adelante. El avance sale de cuántas búsquedas ya hay en `maps_search_log`; no hace falta otra tabla. Sigue contando como una búsqueda del tope de 30 por hora y no pasa de 3 páginas. El mensaje usa la ciudad de cada negocio, no «Todo México».
+
+## Giros
+
+Los chips van por probabilidad de compra. Arriba, con la marca «Alta probabilidad», están abogado, clínica estética, médico estético, salón de eventos, constructora, cocinas integrales, notaría, contador, arquitecto e inmobiliaria. El formulario abre en abogado. Los que ya tienen página en torioweb.com muestran «Demo». Con un chip de esa fila se sugiere, en fijo, «Mejor en: Monterrey, Guadalajara, CDMX». Abajo quedan dentista, ortodoncista, dermatólogo, cirujano plástico, veterinario, oftalmólogo, nutriólogo, fisioterapeuta, psicólogo y colegio. El texto libre sigue ahí.
+
+Si Places devuelve otro giro (una taquería al buscar abogado, o un tipo `restaurant` / `store`), no se guarda. El resumen dice cuántos se descartaron por no coincidir con el giro. Lo mismo aplica a la lista diaria. Los que ya estaban guardados se pueden marcar como **Descartado** con «Descartar los que no coinciden»; no cambia a quien ya fue contactado o cerrado.
 
 ## Lista diaria
 
@@ -125,7 +133,7 @@ curl -sS \
 ```
 
 - `count`: default 20, máximo 40.
-- `city` y `giros` son opcionales. Sin ellos, cada día (hora de Ciudad de México) recorre otros giros de alto valor y otras ciudades grandes, de 8 búsquedas en 8.
+- `city` y `giros` son opcionales. Sin ellos, cada día (hora de Ciudad de México) recorre los giros de alta probabilidad, primero los que tienen demo, y las ciudades de Todo México, de 8 búsquedas en 8. `city=Todo México` es lo mismo que no pasar ciudad.
 - Respuesta: `name`, `giro`, `city`, `rating`, `reviews`, `phone` (52 + 10 dígitos), `maps_url`, `score`, `apertura`, `wa_link` (`https://wa.me/<teléfono>?text=<apertura>`).
 - No incluye negocios sin teléfono mexicano, cerrados temporalmente, ya contactados o ya devueltos otro día.
 - Los guarda en `maps_leads` con estado **Enviado a lista**, así aparecen en el dashboard.
