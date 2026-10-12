@@ -101,6 +101,7 @@ export async function GET(request: NextRequest) {
 
     const fresh = drafts.flatMap((draft) => {
       const business = digestBusinessFromStored({
+        place_id: draft.placeId,
         name: draft.name,
         specialty: draft.specialty,
         city: draft.city,

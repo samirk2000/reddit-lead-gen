@@ -134,7 +134,19 @@ curl -sS \
 
 - `count`: default 20, máximo 40.
 - `city` y `giros` son opcionales. Sin ellos, cada día (hora de Ciudad de México) recorre los giros de alta probabilidad, primero los que tienen demo, y las ciudades de Todo México, de 8 búsquedas en 8. `city=Todo México` es lo mismo que no pasar ciudad.
-- Respuesta: `name`, `giro`, `city`, `rating`, `reviews`, `phone` (52 + 10 dígitos), `maps_url`, `score`, `apertura`, `wa_link` (`https://wa.me/<teléfono>?text=<apertura>`).
+- Respuesta: `place_id`, `name`, `giro`, `city`, `rating`, `reviews`, `phone` (52 + 10 dígitos), `maps_url`, `score`, `apertura`, `wa_link` (`https://wa.me/<teléfono>?text=<apertura>`).
+
+Para marcar un prospecto después de escribirle:
+
+```bash
+curl -sS -X POST \
+  -H "Authorization: Bearer $MAPS_DIGEST_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"place_id":"ChIJ...","status":"contactado"}' \
+  "https://reddit-lead-gen.vercel.app/api/maps/mark-status"
+```
+
+`status` es `contactado`, `respondio` o `descartado` (`respondio` se guarda como `respondió`). Si no hay `place_id`, manda `phone`: se comparan los últimos 10 dígitos, así que sirven `52…` y `521…`. Si el prospecto ya está `cerrado`, responde 200 con `unchanged: true` y no lo baja de estado. 404 si no hay fila, 400 si falta el identificador o el estado no sirve, 401 si el bearer no coincide. No pide migración.
 - No incluye negocios sin teléfono mexicano, cerrados temporalmente, ya contactados o ya devueltos otro día.
 - Los guarda en `maps_leads` con estado **Enviado a lista**, así aparecen en el dashboard.
 - Dueño de las filas: `REDDIT_INGEST_USER_ID` si hay más de un usuario; si solo hay uno, ese usuario. Misma regla que `/api/reddit-web/ingest`.

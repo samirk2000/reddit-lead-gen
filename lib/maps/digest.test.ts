@@ -124,6 +124,7 @@ describe("daily list selection", () => {
 
     const item = digestBusinessFromDraft(drafts[0] as MapsLeadDraft);
     assert.ok(item);
+    assert.equal(item.place_id, "ok");
     assert.equal(item.giro, "dentista");
     assert.equal(item.city, "Monterrey");
     assert.equal(item.phone, "528111112222");
@@ -217,6 +218,7 @@ describe("daily list selection", () => {
     assert.equal(fresh?.apertura.includes("Zaragoza"), false);
 
     const stored = digestBusinessFromStored({
+      place_id: "pue",
       name: "Dental Centro",
       specialty: "dentista",
       city: "Heroica Puebla de Zaragoza",
@@ -229,6 +231,7 @@ describe("daily list selection", () => {
       lead_reason: "sin_sitio",
       business_status: "OPERATIONAL",
     });
+    assert.equal(stored?.place_id, "pue");
     assert.equal(stored?.city, "Puebla");
     assert.match(stored?.apertura ?? "", /en Puebla/);
     assert.equal(stored?.apertura.includes("Heroica"), false);
