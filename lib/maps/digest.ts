@@ -81,6 +81,7 @@ export type DigestQuery = {
 };
 
 export type DigestBusiness = {
+  place_id: string;
   name: string;
   giro: string;
   city: string;
@@ -194,6 +195,7 @@ export function digestBusinessFromDraft(draft: MapsLeadDraft): DigestBusiness | 
     userRatingCount: draft.userRatingCount,
   });
   return {
+    place_id: draft.placeId,
     name: draft.name,
     giro: draft.specialty,
     city,
@@ -208,6 +210,7 @@ export function digestBusinessFromDraft(draft: MapsLeadDraft): DigestBusiness | 
 }
 
 export function digestBusinessFromStored(lead: {
+  place_id: string;
   name: string;
   specialty: string;
   city: string;
@@ -243,6 +246,7 @@ export function digestBusinessFromStored(lead: {
     lead.google_maps_uri ??
     `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lead.name} ${city}`.trim())}`;
   return {
+    place_id: lead.place_id,
     name: lead.name,
     giro: lead.specialty,
     city,
