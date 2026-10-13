@@ -114,7 +114,10 @@ export async function handleCallback(d: DripDeps, chatId: unknown, fromId: unkno
   if (!p || p.k !== cb.k) return { answer: "Ese ya estaba marcado", label: null };
   const now = (d.now ?? (() => new Date()))().getTime();
   const date = localTime(new Date(now)).date;
-  const next: DripState = { ...state, pending: null, last_action_at: now, next_at: now + jitterMs(d.rnd) };
+  // ✅ waits 4–6 min; ⏭️/📵 send the next one right away.
+  const next: DripState = cb.kind === "ok"
+    ? { ...state, pending: null, last_action_at: now, next_at: now + jitterMs(d.rnd) }
+    : { ...state, pending: null, last_action_at: 0, next_at: 0 };
   if (!(await d.store.saveState(next, version))) return { answer: "Ese ya estaba marcado", label: null };
   const day = await d.store.loadDay(date);
   if (cb.kind === "ok") {
@@ -129,6 +132,7 @@ export async function handleCallback(d: DripDeps, chatId: unknown, fromId: unkno
     day.user_skipped.push({ k: p.k, name: p.name, at: now });
   }
   await d.store.saveDay(day);
+  if (cb.kind !== "ok") await sendNext(d).catch((e) => (d.log ?? console.log)("[drip] siguiente inmediato falló", e));
   if (cb.kind === "ok") return { answer: `✅ Listo, ${day.sent.length} de ${quotaFor(date)}`, label: "✅ Enviado" };
   if (cb.kind === "nowa") return { answer: "📵 Anotado, no vuelve a salir", label: "📵 Sin WhatsApp" };
   return { answer: "⏭️ Saltado", label: "⏭️ Saltado" };

@@ -78,18 +78,16 @@ describe("drip engine", () => {
     assert.equal(r1.label, "⏭️ Saltado");
     assert.ok(calls.some((c) => c.method === "answerCallbackQuery"));
     assert.ok(calls.some((c) => c.method === "editMessageReplyMarkup"));
-    assert.equal(m.state.pending, null);
-    now.t = new Date(now.t.getTime() + 3 * 60_000);
-    assert.equal(await tick(deps), "espera");
-    now.t = new Date(now.t.getTime() + 3 * 60_000);
-    assert.equal(await tick(deps), "sent");
-    assert.equal(m.pending()?.name, "B"); // PBX skipped
+    assert.equal(m.pending()?.name, "B"); // skip sends the next one right away; PBX skipped
     assert.ok(m.dnc.has("3338274500"));
 
     await onCallbackQuery(deps, cq(`drip:ok:${m.pending()!.k}`));
     assert.deepEqual(marks.slice(-1), ["contactado"]);
-    now.t = new Date(now.t.getTime() + 6 * 60_000);
-    await tick(deps);
+    assert.equal(m.pending(), null); // ok waits 4–6 min
+    now.t = new Date(now.t.getTime() + 3 * 60_000);
+    assert.equal(await tick(deps), "espera");
+    now.t = new Date(now.t.getTime() + 3 * 60_000);
+    assert.equal(await tick(deps), "sent");
     assert.match(String(calls.at(-1)!.body.text), /^📍 2 de 15/);
     const r3 = await onCallbackQuery(deps, cq(`drip:nowa:${m.pending()!.k}`));
     assert.equal(r3.label, "📵 Sin WhatsApp");
