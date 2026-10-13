@@ -27,7 +27,6 @@ const DEFAULT_CANDIDATES = [
   "cordcutters",
   "Stremio",
   "sideloaded",
-  "iptv",
 ] as const;
 
 // Browser-like User-Agent so Reddit doesn't treat this as a bare datacenter bot.

@@ -52,6 +52,8 @@ export type LeadView = Pick<
 
 type LeadListProps = {
   leads: LeadView[];
+  /** Gemini score that keeps a lead in Todos. Matches TELEGRAM_ALERT_MIN_SCORE. */
+  minOpportunityScore?: number;
   salesCta?: {
     whatsappNumber?: string | null;
     whatsappUrl?: string | null;
@@ -70,15 +72,13 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 type ChannelFilter = "all" | LeadChannel;
 
-const MIN_OPPORTUNITY_SCORE = 7;
-
 function isSnoozed(lead: LeadView, now = Date.now()): boolean {
   if (!lead.follow_up_at) return false;
   return new Date(lead.follow_up_at).getTime() > now;
 }
 
 /** Actionable queue: high intent, not replied/archived/rejected, not snoozed. */
-function isOpportunity(lead: LeadView): boolean {
+function isOpportunity(lead: LeadView, minScore: number): boolean {
   if (
     lead.status === "replied" ||
     lead.status === "archived" ||
@@ -88,7 +88,7 @@ function isOpportunity(lead: LeadView): boolean {
   }
   if (isSnoozed(lead)) return false;
   if (lead.status === "notified" || lead.status === "new") {
-    return lead.intent_score === null || lead.intent_score >= MIN_OPPORTUNITY_SCORE;
+    return lead.intent_score === null || lead.intent_score >= minScore;
   }
   return false;
 }
@@ -97,7 +97,11 @@ function isFollowUp(lead: LeadView): boolean {
   return Boolean(lead.follow_up_at) && lead.status !== "replied" && lead.status !== "archived";
 }
 
-export function LeadList({ leads: initialLeads, salesCta }: LeadListProps) {
+export function LeadList({
+  leads: initialLeads,
+  salesCta,
+  minOpportunityScore = 7,
+}: LeadListProps) {
   const [leads, setLeads] = React.useState(initialLeads);
   const [tab, setTab] = React.useState<TabKey>("all");
   const [channel, setChannel] = React.useState<ChannelFilter>("all");
@@ -117,7 +121,7 @@ export function LeadList({ leads: initialLeads, salesCta }: LeadListProps) {
       : leads.filter((l) => detectLeadChannel(l) === channel);
 
   const filtered = channelFiltered.filter((l) => {
-    if (tab === "all") return isOpportunity(l);
+    if (tab === "all") return isOpportunity(l, minOpportunityScore);
     if (tab === "followup") return isFollowUp(l);
     return l.status === tab;
   });
@@ -248,7 +252,7 @@ export function LeadList({ leads: initialLeads, salesCta }: LeadListProps) {
       <TabBar
         active={tab}
         onChange={setTab}
-        counts={countByTab(channelFiltered)}
+        counts={countByTab(channelFiltered, minOpportunityScore)}
       />
 
       {filtered.length === 0 ? (
@@ -307,9 +311,9 @@ function TabBar({
   );
 }
 
-function countByTab(leads: LeadView[]): Record<TabKey, number> {
+function countByTab(leads: LeadView[], minScore: number): Record<TabKey, number> {
   return {
-    all: leads.filter(isOpportunity).length,
+    all: leads.filter((lead) => isOpportunity(lead, minScore)).length,
     notified: leads.filter((l) => l.status === "notified").length,
     followup: leads.filter(isFollowUp).length,
     replied: leads.filter((l) => l.status === "replied").length,
@@ -386,11 +390,11 @@ function LeadCard({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onCopy("Respuesta pública", replyPublic)}
+              onClick={() => onCopy("Respuesta", replyPublic)}
               disabled={!replyPublic}
             >
               <Copy className="size-4" aria-hidden="true" />
-              Copiar pública
+              Copiar respuesta
             </Button>
             <Button
               variant="outline"
@@ -448,7 +452,7 @@ function LeadCard({
 
         {replyPublic && (
           <blockquote className="mt-3 rounded-md border-l-2 border-primary bg-muted/50 p-3 text-sm text-foreground whitespace-pre-wrap">
-            <span className="font-medium">Pública ({channelLabel(channel)}): </span>
+            <span className="font-medium">Para pegar ({channelLabel(channel)}): </span>
             {replyPublic}
           </blockquote>
         )}

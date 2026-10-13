@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
-import { GEMINI_MODEL } from "@/lib/ai/gemini";
+import { geminiModel } from "@/lib/config/runtime";
 import { renderLeadMessage } from "@/lib/maps/message";
 import {
   buildPersonalizePrompt,
@@ -47,7 +47,7 @@ export async function personalizeMapsMessage(
 
     try {
       const response = await genAI.models.generateContent({
-        model: GEMINI_MODEL,
+        model: geminiModel(),
         contents: prompt,
         config: {
           responseMimeType: "application/json",

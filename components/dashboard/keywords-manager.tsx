@@ -186,7 +186,7 @@ function BulkImportForm({
           onChange={(e) => setValue(e.target.value)}
           required
           rows={6}
-          placeholder={`looking for iptv, TiviMate\nbest player, AndroidTV\nfire stick setup, firetvstick\nneed iptv`}
+          placeholder={`busco iptv, all\nrecomienden iptv, all\nse cayó mi iptv, all\niptv firestick, firetvstick\ncancelar cable, all`}
           className="font-mono text-xs"
         />
         <p className="text-xs text-muted-foreground">

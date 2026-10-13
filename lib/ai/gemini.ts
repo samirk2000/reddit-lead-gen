@@ -1,4 +1,6 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
+import { geminiModel } from "@/lib/config/runtime";
+import type { LeadChannel } from "@/lib/leads/channel";
 import {
   ensureSalesCtaInReply,
   formatCtaBlock,
@@ -6,7 +8,12 @@ import {
   resolveWhatsappHref,
   type SalesCta,
 } from "@/lib/sales/cta";
-import type { LeadChannel } from "@/lib/leads/channel";
+import {
+  DISCOUNT_CODE,
+  DISCOUNT_PERCENT,
+  enforceSellerReply,
+  WHATSAPP_DISPLAY,
+} from "@/lib/sales/reply-rules";
 
 /**
  * Structured output for a single analyzed Reddit/Quora post.
@@ -14,9 +21,9 @@ import type { LeadChannel } from "@/lib/leads/channel";
 export type RedditPostAnalysis = {
   intent_score: number;
   analysis_reasoning: string;
-  /** Public Quora/Reddit-safe reply (no WhatsApp links). */
+  /** Paste-ready reply: seller disclosure, REDDIT15, WhatsApp, Android-first. */
   suggested_reply: string;
-  /** Private operator follow-up with WhatsApp/web CTA. */
+  /** Shorter WhatsApp follow-up with the same facts. */
   suggested_reply_wa: string;
 };
 
@@ -46,12 +53,12 @@ export const REDDIT_ANALYSIS_SCHEMA: Schema = {
     suggested_reply: {
       type: Type.STRING,
       description:
-        "Respuesta PÚBLICA segura: útil, natural, sin links de WhatsApp ni web de venta.",
+        "Respuesta en español de México para pegar a mano. El autor dice que vende el servicio, incluye el código REDDIT15 y el WhatsApp, y habla de Android, Android TV, Firestick o Google TV.",
     },
     suggested_reply_wa: {
       type: Type.STRING,
       description:
-        "Follow-up PRIVADO para el operador con WhatsApp y/o web oficiales.",
+        "Mensaje corto de WhatsApp con la misma honestidad de vendedor, el código REDDIT15 y el número.",
     },
   },
   required: [
@@ -62,7 +69,7 @@ export const REDDIT_ANALYSIS_SCHEMA: Schema = {
   ],
 };
 
-export const GEMINI_MODEL = "gemini-3.6-flash";
+export { geminiModel };
 
 export async function analyzeRedditPost(
   postTitle: string,
@@ -97,7 +104,7 @@ export async function analyzeRedditPost(
 
     try {
       const response = await genAI.models.generateContent({
-        model: GEMINI_MODEL,
+        model: geminiModel(),
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -141,38 +148,40 @@ function finalizeReplies(
   salesCta: SalesCta,
   channel: LeadChannel,
 ): RedditPostAnalysis {
-  let publicReply = stripHardCtas(parsed.suggested_reply);
-  if (channel === "quora") {
-    publicReply = publicReply.trim();
-  }
-
+  void channel;
+  const brand = salesCta.businessName;
+  const publicReply = enforceSellerReply(parsed.suggested_reply, brand);
   const waReply = ensureSalesCtaInReply(
-    parsed.suggested_reply_wa || buildDefaultWaFollowUp(salesCta),
+    enforceSellerReply(
+      parsed.suggested_reply_wa || buildDefaultWaFollowUp(salesCta),
+      brand,
+    ),
     salesCta,
   );
 
   return {
     ...parsed,
+    intent_score: clampIntentScore(parsed.intent_score),
     suggested_reply: publicReply,
     suggested_reply_wa: waReply,
   };
 }
 
-function stripHardCtas(reply: string): string {
-  return reply
-    .replace(/https?:\/\/(?:api\.)?whatsapp\.com\/\S+/gi, "")
-    .replace(/https?:\/\/wa\.me\/\S+/gi, "")
-    .replace(/WhatsApp:\s*\S+/gi, "")
-    .replace(/Web:\s*https?:\/\/\S+/gi, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+function clampIntentScore(value: number): number {
+  const rounded = Math.round(value);
+  if (rounded < 1) return 1;
+  if (rounded > 10) return 10;
+  return rounded;
 }
 
 function buildDefaultWaFollowUp(cta: SalesCta): string {
-  const brand = cta.businessName?.trim() || "nosotros";
+  const brand = cta.businessName?.trim() || "Swiftya Latino";
   const block = formatCtaBlock(cta);
   return [
-    `Hola! Te escribo de ${brand}. Si querés te paso una prueba para Fire Stick / Android TV y te ayudo con la config.`,
+    `Hola. Te escribo de ${brand}. Yo vendo este servicio, no soy un cliente que ya lo usa.`,
+    `Está armado para Android, Android TV, Firestick y Google TV.`,
+    `Con el código ${DISCOUNT_CODE} tienes ${DISCOUNT_PERCENT}% de descuento.`,
+    `WhatsApp: ${WHATSAPP_DISPLAY}.`,
     block ?? "",
   ]
     .filter(Boolean)
@@ -198,44 +207,44 @@ function buildAnalysisPrompt(
   channel: LeadChannel,
 ): string {
   const ctaLines = buildCtaPromptLines(salesCta);
-  const channelRules =
+  const where =
     channel === "quora"
-      ? [
-          "CANAL: Quora (alto riesgo de ban / borrado).",
-          "suggested_reply (PÚBLICA):",
-          "- 100% útil: tips de estabilidad, peaking, prueba, soporte, Fire Stick.",
-          "- PROHIBIDO: WhatsApp, wa.me, api.whatsapp.com, URL de venta, 'prueba gratis'.",
-          "- Preferí CERO CTA de venta. Soft DM máximo: 'si querés te oriento por DM'.",
-          "- Nunca digas que sos el mejor proveedor ni pegues marca/web.",
-          "suggested_reply_wa (PRIVADA, solo operador):",
-          "- Mensaje corto para DM o WhatsApp, CON links exactos de abajo.",
-        ]
-      : [
-          "CANAL: Reddit.",
-          "suggested_reply (PÚBLICA):",
-          "- Útil y natural. Soft CTA a DM OK. Sin WhatsApp ni links de venta.",
-          "suggested_reply_wa (PRIVADA):",
-          "- Follow-up con WhatsApp/web exactos para cuando te escriban.",
-        ];
+      ? "El operador va a pegar suggested_reply en Quora a mano."
+      : "El operador va a pegar suggested_reply en Reddit a mano.";
 
   return [
-    "Actúa como un experto en generación de leads IPTV para audiencia",
-    "LATINOAMERICANA (español). Analiza el post frente a la keyword objetivo.",
+    "Eres el asistente de un vendedor de IPTV en México (Swiftya Latino).",
+    "Analiza el post frente a la frase objetivo y redacta en español de México (tú, no vos).",
     "",
-    "PRIORIDAD: posts en español o LATAM buscando IPTV / Fire Stick.",
-    "Posts 100% EN de US/EU → intent_score ≤4 salvo pedido explícito.",
+    "PRIORIDAD: gente en México o Latinoamérica que quiere comprar o reemplazar IPTV,",
+    "sobre todo si usa Android, Android TV, Firestick o Google TV.",
+    "Posts en inglés de Estados Unidos o Europa sin pedido de compra: intent_score de 4 o menos.",
     "",
-    "INTENCIÓN ALTA (8-10): IPTV, proveedor, M3U, Xtream, prueba, Fire Stick.",
-    "INTENCIÓN BAJA (<6): memes, noticias, leads gringos sin compra.",
+    "INTENCIÓN ALTA (8-10): busco iptv, recomienden iptv, se cayó mi iptv,",
+    "iptv firestick, cancelar cable, proveedor, M3U, prueba, lista.",
+    "INTENCIÓN BAJA (menos de 6): memes, noticias, quejas sin ganas de comprar.",
     "",
-    ...channelRules,
+    where,
+    "La app NUNCA publica el texto. Solo lo guarda para que una persona lo copie.",
+    "",
+    "REGLAS DE suggested_reply Y suggested_reply_wa (las dos):",
+    "- Di de frente que TÚ vendes el servicio. Nunca te hagas pasar por un cliente satisfecho.",
+    "- Incluye esta frase o una equivalente: \"yo vendo este servicio, no soy un cliente\".",
+    `- Incluye el código ${DISCOUNT_CODE} y que es ${DISCOUNT_PERCENT}% de descuento.`,
+    `- Incluye el WhatsApp escrito así: ${WHATSAPP_DISPLAY}.`,
+    "- Prioriza a quien usa Android, Android TV, Firestick o Google TV.",
+    "- Si la persona habla de otro aparato, invítala a esos dispositivos sin atacar el suyo.",
+    "- PROHIBIDO mencionar limitaciones de audio en Roku, problemas de sonido en Roku,",
+    "  o cualquier queja de audio de Roku. No hables de Roku.",
+    "- suggested_reply: 4 a 8 frases, útil y directa, lista para pegar.",
+    "- suggested_reply_wa: mensaje más corto para WhatsApp, con los mismos datos.",
     ...ctaLines,
     "",
-    `KEYWORD OBJETIVO: ${keyword}`,
+    `FRASE OBJETIVO: ${keyword}`,
     "",
-    `TÍTULO DEL POST: ${postTitle}`,
+    `TÍTULO: ${postTitle}`,
     "",
-    `CONTENIDO DEL POST: ${postContent || "(sin contenido)"}`,
+    `CONTENIDO: ${postContent || "(sin contenido)"}`,
   ].join("\n");
 }
 
@@ -246,7 +255,7 @@ function buildCtaPromptLines(salesCta: SalesCta): string[] {
 
   const lines = [
     "",
-    "CONTACTO (SOLO para suggested_reply_wa — no para suggested_reply pública):",
+    "CONTACTO (inclúyelo en las dos respuestas, además del número de arriba):",
   ];
   if (brand) lines.push(`- Marca: ${brand}`);
   if (waHref) lines.push(`- WhatsApp exacto: ${waHref}`);

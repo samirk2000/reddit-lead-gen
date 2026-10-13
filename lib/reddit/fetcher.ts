@@ -46,9 +46,9 @@ const REDDIT_HEADERS: Record<string, string> = {
 };
 
 /**
- * Active, focused communities for players & streaming devices (IPTV/firestick
- * niche). All names are bare/sanitized (no spaces, no `r/` prefix) to avoid
- * false-404s. Validated-activo by the `npm run check-subreddits` diagnostic.
+ * Device communities used only by the optional cloud fallback.
+ * r/iptv, r/mexico and r/ayudamexico stay out: dead or no self-promo.
+ * Names are bare (no spaces, no `r/` prefix).
  */
 export const DEFAULT_SUBREDDITS = [
   "firetvstick",
@@ -58,8 +58,20 @@ export const DEFAULT_SUBREDDITS = [
   "cordcutters",
   "Stremio",
   "sideloaded",
-  "iptv",
 ] as const;
+
+/**
+ * Subs the cloud fallback must not fetch.
+ * r/iptv, r/mexico and r/ayudamexico are dead or ban self-promo.
+ * Legacy keyword rows may still name them.
+ */
+export const BLOCKED_SUBREDDITS = new Set([
+  "iptv",
+  "mexico",
+  "ayudamexico",
+  "iptvreviews",
+  "firestickhacks",
+]);
 
 /**
  * Minimal headers for the ScraperAPI proxy. The key travels on the query

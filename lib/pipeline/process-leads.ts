@@ -5,7 +5,9 @@ import type {
   Keyword,
   UserSettings,
 } from "@/lib/supabase/types";
+import { telegramAlertMinScore } from "@/lib/config/runtime";
 import {
+  BLOCKED_SUBREDDITS,
   DEFAULT_SUBREDDITS,
   fetchSubredditComments,
   fetchSubredditPosts,
@@ -19,9 +21,6 @@ import {
   type RedditPostAnalysis,
 } from "@/lib/ai/gemini";
 
-/** Threshold above which a lead is worth alerting the user about. */
-const ALERT_INTENT_SCORE = 7;
-
 /**
  * Runs the full lead-generation pipeline for a single user.
  *
@@ -29,8 +28,8 @@ const ALERT_INTENT_SCORE = 7;
  *   1. Load the user's credentials and active keywords.
  *   2. Global dedupe of subreddits: group keywords by unique (normalized)
  *      subreddit so we fetch each subreddit's RSS ONCE per scan.
- *   3. Drop known-dead subreddits early (e.g. r/IPTV, r/IPTVReviews) that 404
- *      and would waste a ScraperAPI credit.
+ *   3. Skip blocked subs (r/iptv, r/mexico, r/ayudamexico, and known 404s)
+ *      so the optional cloud fallback does not spend a credit there.
  *   4. For each subreddit: fetch posts RSS + recent comments listing once,
  *      keyword-filter locally and run Gemini on matching items.
  *
@@ -107,18 +106,6 @@ export async function runLeadGenerationPipelineForUser(
 /** Max concurrent subreddit fetches. Kept low to respect rate limits. */
 const MAX_CONCURRENT_SUBREDDITS = 2;
 
-/**
- * Subreddits known to 404 / be dead; skip to avoid wasting API credits.
- *
- * These are not part of the active target list but may still be referenced by
- * legacy keyword rows in the database, so they are blocked here to prevent
- * burning a ScraperAPI credit on a 404. `iptv` was validated-activo by
- * `npm run check-subreddits`, so it was removed from this set (it is now part
- * of `DEFAULT_SUBREDDITS`). `firestickhacks` was removed entirely (verified
- * nonexistent).
- */
-const BLOCKED_SUBREDDITS = new Set(["iptvreviews", "firestickhacks"]);
-
 /** Normalizes a subreddit to a lowercase bare name (no `r/` prefix). */
 function normalizeSubreddit(subreddit: string): string {
   return subreddit.trim().replace(/^r\//, "").toLowerCase() || "all";
@@ -152,7 +139,7 @@ function groupKeywordsBySubreddit(
     for (const target of targets) {
       if (BLOCKED_SUBREDDITS.has(target)) {
         console.warn(
-          `[pipeline] Se omite r/${target} (subreddit no válido/404) para evitar gastar crédito.`,
+          `[pipeline] Se omite r/${target} (fuera de la lista o sin autopromo) para no gastar crédito.`,
         );
         continue;
       }
@@ -386,7 +373,7 @@ async function processMatchedItem(
   }
 
   const status =
-    analysis.intent_score >= ALERT_INTENT_SCORE ? "notified" : "archived";
+    analysis.intent_score >= telegramAlertMinScore() ? "notified" : "archived";
 
   const lead = await saveLead(supabase, {
     user_id: userId,
