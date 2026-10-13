@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "check-subreddits": "node --experimental-strip-types scripts/check-subreddits.ts",
-    "test:leads": "node --import ./scripts/register-ts-tests.mjs --experimental-strip-types --test lib/leads/desktop-lead.test.ts lib/sales/reply-rules.test.ts lib/config/runtime.test.ts"
+    "test:leads": "node --import ./scripts/register-ts-tests.mjs --experimental-strip-types --test lib/leads/desktop-lead.test.ts lib/sales/reply-rules.test.ts lib/config/runtime.test.ts lib/drip/drip.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.18.0",

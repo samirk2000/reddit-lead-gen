@@ -1,0 +1,19 @@
+name: drip-tick
+# Vercel Hobby only allows daily crons, so the 5-minute drip tick is pinged from here.
+# Mon–Sat, 17:00–02:59 UTC covers 11:00–20:59 CDMX (UTC-6). The route itself enforces 11–20 CDMX.
+on:
+  schedule:
+    - cron: "*/5 17-23 * * 1-6"
+    - cron: "*/5 0-2 * * 0,2-6"
+  workflow_dispatch: {}
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /api/drip/tick
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://reddit-lead-gen.vercel.app' }}
+        run: |
+          curl -fsS -m 70 -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/drip/tick" -o /dev/null -w "%{http_code}\n"
