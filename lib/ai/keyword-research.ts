@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
-import { GEMINI_MODEL } from "@/lib/ai/gemini";
+import { geminiModel } from "@/lib/config/runtime";
 
 /**
  * One researched keyword candidate ready to activate in the pipeline.
@@ -107,7 +107,7 @@ export async function researchKeywordsWithGemini(
     }
     try {
       const response = await genAI.models.generateContent({
-        model: GEMINI_MODEL,
+        model: geminiModel(),
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -160,13 +160,13 @@ function buildResearchPrompt(niche: string, sampleTitles: string[]): string {
     "",
     "REGLAS:",
     "- Frases en español latino, 2 a 5 palabras. Evita genéricos de 1 palabra.",
-    "- Incluye variantes regionales (mexico/méxico, barato, estable, prueba).",
-    "- Incluye frases estilo pregunta Quora ES: 'mejor iptv', 'iptv estable',",
-    "  'proveedor iptv latam', 'fire stick iptv', 'iptv sin cortes'.",
-    "- Mezcla: comprar, configurar, comparar proveedores, dolor de buffering.",
+    "- Prioriza México: busco iptv, recomienden iptv, se cayó mi iptv,",
+    "  iptv firestick, cancelar cable, iptv android tv, iptv google tv.",
+    "- Incluye variantes de compra y de dolor (se cayó, no jala, quiero dejar el cable).",
     "- suggested_subreddit: uno de firetvstick, smartersiptv, TiviMate,",
-    "  AndroidTV, cordcutters, Stremio, sideloaded, iptv, o `all`.",
-    "- intent_score 8-10 solo si suena a 'busco / necesito / recomiendan'.",
+    "  AndroidTV, cordcutters, Stremio, sideloaded, o `all`.",
+    "- NUNCA sugieras r/iptv, r/mexico ni r/ayudamexico.",
+    "- intent_score 8-10 solo si suena a 'busco / necesito / recomienden'.",
     "- Máximo 25 candidates, ordenados por intent_score desc.",
     "- NO propongas frases en inglés salvo que sean marcas (TiviMate, Fire Stick).",
     "",

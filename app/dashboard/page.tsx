@@ -5,6 +5,7 @@ import { requireUserId } from "@/lib/supabase/session";
 import { MetricCards } from "@/components/dashboard/metric-cards";
 import { LeadList, type LeadView } from "@/components/dashboard/lead-list";
 import { ProgressiveScanPanel } from "@/components/dashboard/progressive-scan-panel";
+import { telegramAlertMinScore } from "@/lib/config/runtime";
 import { resolveSalesCta } from "@/lib/sales/brand";
 
 export const metadata: Metadata = {
@@ -74,8 +75,10 @@ export default async function DashboardPage() {
           Leads
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Todos = pendientes. Copiá respuesta pública (sin WA) o follow-up
-          WhatsApp. Escaneá Reddit/Quora por separado.
+          La app de Windows manda los posts. Aquí abres el enlace, copias la
+          respuesta y la pegas tú en Reddit. Esta página no publica sola. El
+          escaneo de arriba es solo un respaldo: desde Vercel, Reddit suele
+          responder 403.
         </p>
       </div>
 
@@ -89,6 +92,7 @@ export default async function DashboardPage() {
 
       <LeadList
         leads={leads}
+        minOpportunityScore={telegramAlertMinScore()}
         salesCta={{
           whatsappNumber: salesCta.whatsappNumber ?? null,
           whatsappUrl: salesCta.whatsappUrl ?? null,

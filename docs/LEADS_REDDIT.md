@@ -1,6 +1,8 @@
 # Leads de Reddit
 
-Sección del dashboard para los posts que encuentra el bot de Python de Torio Web: gente que pide una página web, una landing o una app de Roku. El bot lee RSS públicos cada 2 horas, arma un borrador en español (`borrador_es`) y otro en inglés (`borrador_en`), y los manda a esta app.
+Los leads de IPTV que manda la app de Windows (BuscadorSubredditsZombies) no usan este contrato. Ese flujo está en [MANUAL_USUARIO.md](./MANUAL_USUARIO.md): `POST /api/leads/ingest`.
+
+Esta página es el bot viejo de páginas web: gente que pide una página web, una landing o una app de Roku. El bot lee RSS públicos cada 2 horas, arma un borrador en español (`borrador_es`) y otro en inglés (`borrador_en`), y los manda a esta app.
 
 La pantalla está en **Dashboard → Leads de Reddit** (`/dashboard/reddit-web`). Usa el mismo login de Supabase que el resto. Cada usuario solo ve sus filas (RLS por `auth.uid()`, igual que Negocios sin web).
 

@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { cloudScraperEnabled } from "@/lib/config/runtime";
 import { runLeadGenerationPipelineForAllActiveUsers } from "@/lib/pipeline/process-leads";
 
 /** Allow the full multi-subreddit scan to finish on Vercel Pro (Hobby caps lower). */
@@ -29,6 +30,15 @@ export async function GET(request: NextRequest) {
       { ok: false, error: "No autorizado." },
       { status: 401 },
     );
+  }
+
+  if (!cloudScraperEnabled()) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason:
+        "El escaneo en Vercel está apagado. Los leads entran por POST /api/leads/ingest. Para usarlo como respaldo, define CLOUD_SCRAPER_ENABLED=true.",
+    });
   }
 
   try {

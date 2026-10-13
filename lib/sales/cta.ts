@@ -132,6 +132,6 @@ export function ensureSalesCtaInReply(reply: string, cta: SalesCta): string {
   }
 
   const brand = cta.businessName?.trim() || "nosotros";
-  const closer = `Si querés prueba y ayuda con la config, escribime por WhatsApp o mirá ${brand} acá:`;
+  const closer = `Si quieres una prueba y ayuda con la configuración, escríbeme por WhatsApp o mira ${brand} aquí:`;
   return `${reply.trim()}\n\n${closer}\n${block}`;
 }

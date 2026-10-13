@@ -9,7 +9,9 @@ import type {
   ScanEvent,
   ScanMode,
 } from "@/lib/pipeline/scan-types";
+import { telegramAlertMinScore } from "@/lib/config/runtime";
 import {
+  BLOCKED_SUBREDDITS,
   DEFAULT_SUBREDDITS,
   fetchSubredditComments,
   fetchSubredditPosts,
@@ -23,8 +25,6 @@ import { detectLeadChannel } from "@/lib/leads/channel";
 
 export type { ScanEvent, ScanLeadPreview, ScanMode } from "@/lib/pipeline/scan-types";
 
-const ALERT_INTENT_SCORE = 7;
-const BLOCKED_SUBREDDITS = new Set(["iptvreviews", "firestickhacks"]);
 
 /**
  * Streams a progressive scan for one user. Safe to abort mid-flight.
@@ -435,7 +435,7 @@ async function analyzeAndStore(
   }
 
   const status =
-    analysis.intent_score >= ALERT_INTENT_SCORE ? "notified" : "archived";
+    analysis.intent_score >= telegramAlertMinScore() ? "notified" : "archived";
 
   const { data, error } = await supabase
     .from("detected_leads")
