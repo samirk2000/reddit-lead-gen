@@ -133,7 +133,7 @@ export function parseCallback(data: unknown): { kind: CallbackKind; k: string } 
   return m && m[1] && m[2] ? { kind: m[1] as CallbackKind, k: m[2] } : null;
 }
 
-export const jitterMs = (rnd: () => number = Math.random) => (4 + rnd() * 2) * 60_000;
+export const jitterMs = (rnd: () => number = Math.random) => Math.round((4 + rnd() * 2) * 60_000); // bigint columns
 
 export function recapText(day: DripDay, pending: DripPending | null, reason = ""): string {
   const lines = day.sent.map((s, i) => `${i + 1}. ${s.name} (${s.city ?? ""})`).join("\n");
