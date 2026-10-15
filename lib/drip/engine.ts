@@ -1,5 +1,6 @@
 /** Telegram drip engine: shared by the cron tick and the Telegram webhook. */
 import type { DigestBusiness } from "@/lib/maps/digest";
+import { isNotariaBusiness } from "../maps/notaria";
 import {
   DRIP_HELP, DRIP_OWNER_CHAT, decideTick, dripKeyboard, formatBusiness, jitterMs, key10,
   likelyLandline, localTime, normalizeMx, openerFrom, parseCallback, quotaFor, recapText,
@@ -39,6 +40,7 @@ async function nextBusiness(d: DripDeps, day: DripDay, state: DripState): Promis
     const seen = [...day.sent, ...day.skipped, ...day.user_skipped];
     if (seen.some((s) => s.k === k) || state.pending?.k === k) continue;
     const skip = (why: string) => { day.skipped.push({ k, name: b.name, at: (d.now ?? (() => new Date()))().getTime(), why }); log(`[drip] omitido ${b.name}: ${why}`); };
+    if (isNotariaBusiness({ name: b.name, giro: b.giro })) { skip("notaría"); continue; }
     if (!normalizeMx(b.phone)) { skip("número inválido"); continue; }
     const blocked = await d.store.isBlocked(k, b.place_id);
     if (blocked) { skip(blocked); continue; }

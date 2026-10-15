@@ -109,6 +109,18 @@ describe("drip engine", () => {
     assert.equal(await tick(deps), "pendiente");
     assert.equal(m.pending()?.k, k);
   });
+  it("salta notarías guardadas y ofrece el siguiente giro", async () => {
+    const now = { t: new Date("2026-10-15T12:00:00-06:00") };
+    const { deps, calls } = setup(now);
+    deps.fetchList = async () => [
+      { ...biz("Notaría Pública No. 4", "522221112233"), giro: "notaría", city: "Puebla" },
+      { ...biz("Notaría Pública No. 51", "526641112244"), giro: "abogado", city: "Tijuana" },
+      biz("A", "525521437788"),
+    ];
+    assert.equal(await tick(deps), "sent");
+    assert.match(String(calls[0]!.body.text), /<b>A<\/b>/);
+    assert.equal(calls.some((call) => String(call.body.text).includes("Notaría")), false);
+  });
   it("commands", async () => {
     const now = { t: new Date("2026-10-13T12:00:00-06:00") };
     const { m, deps } = setup(now);

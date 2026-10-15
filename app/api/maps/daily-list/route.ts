@@ -12,6 +12,7 @@ import {
   type DigestBusiness,
 } from "@/lib/maps/digest";
 import { MapsError, mapsDbErrorMessage } from "@/lib/maps/errors";
+import { isNotariaBusiness } from "@/lib/maps/notaria";
 import { searchPlaces } from "@/lib/maps/places";
 import { leadDraftToInsert } from "@/lib/maps/persist";
 import type { MapsLeadDraft } from "@/lib/maps/types";
@@ -33,7 +34,9 @@ export const maxDuration = 60;
  *
  * At most {@link DIGEST_PLACES_REQUEST_CAP} Text Search calls, one page each.
  * Repeating the default call the same Mexico City day returns the stored list
- * and does not call Places again.
+ * and does not call Places again. Notarías are dropped even when that cache
+ * was built before they left the rotation; if that leaves the list short,
+ * the same call fills the rest from the current giros.
  */
 export async function GET(request: NextRequest) {
   const expected = process.env.MAPS_DIGEST_SECRET?.trim() ?? "";
@@ -65,7 +68,7 @@ export async function GET(request: NextRequest) {
     const excluded = await loadExcludedPlaceIds(supabase, userId);
     let cached: DigestBusiness[] = [];
     if (!custom) {
-      cached = await loadCachedBusinesses(supabase, userId, date);
+      cached = omitNotarias(await loadCachedBusinesses(supabase, userId, date));
       if (cached.length >= parsed.count) {
         console.log("[maps-digest] cache hit", { date, count: parsed.count });
         return NextResponse.json({
@@ -117,7 +120,7 @@ export async function GET(request: NextRequest) {
       return business ? [business] : [];
     });
 
-    const businesses = sortBusinesses([...cached, ...fresh]).slice(0, parsed.count);
+    const businesses = sortBusinesses(omitNotarias([...cached, ...fresh])).slice(0, parsed.count);
     console.log("[maps-digest] ok", {
       date,
       source,
@@ -201,6 +204,7 @@ async function loadCachedBusinesses(
 
   return leads.flatMap((lead) => {
     if (lead.status === "descartado") return [];
+    if (isNotariaBusiness({ name: lead.name, specialty: lead.specialty })) return [];
     if (!storedLeadMatchesGiro(lead)) return [];
     const business = digestBusinessFromStored(lead);
     return business ? [business] : [];
@@ -233,6 +237,10 @@ async function persistDigest(
     { onConflict: "user_id,place_id", ignoreDuplicates: true },
   );
   if (logged.error) failDb(logged.error, "digest log");
+}
+
+function omitNotarias(items: readonly DigestBusiness[]): DigestBusiness[] {
+  return items.filter((item) => !isNotariaBusiness({ name: item.name, giro: item.giro }));
 }
 
 function sortBusinesses(items: DigestBusiness[]): DigestBusiness[] {
