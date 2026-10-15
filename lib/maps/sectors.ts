@@ -181,6 +181,23 @@ add(
 
 add(
   {
+    clientes: "parejas",
+    busqueda: "fertilidad",
+    accion: "agendar",
+    lugar: "clínica",
+    accionCorta: "agendar",
+    ejemploBlog: "¿Cuánto cuesta un tratamiento de fertilidad en {{ciudad}}?",
+    marketScore: 76,
+  },
+  [
+    "fertilidad",
+    { key: "clínica de fertilidad", busqueda: "clínica de fertilidad" },
+    { key: "reproducción asistida", busqueda: "reproducción asistida" },
+  ],
+);
+
+add(
+  {
     clientes: "pacientes",
     busqueda: "fisioterapeuta",
     accion: "agendar",

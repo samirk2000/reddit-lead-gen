@@ -1,6 +1,6 @@
 import { TODO_MEXICO_CITIES, canonicalCityQuery, commonCityName, isTodoMexico } from "@/lib/maps/cities";
 import { MapsError } from "@/lib/maps/errors";
-import { TOP_TIER_GIROS, demoFirstGiros } from "@/lib/maps/giros";
+import { TOP_TIER_GIROS, rotationGiros } from "@/lib/maps/giros";
 import { buildOpeningMessage, whatsAppHref } from "@/lib/maps/message";
 import { isGiroMismatch } from "@/lib/maps/match";
 import { buildLeadDrafts } from "@/lib/maps/qualify";
@@ -70,10 +70,10 @@ export function parseDigestRequest(params: URLSearchParams): DigestRequest {
 }
 
 /**
- * Default daily-list giros: top tier, demo pages first.
- * Arquitecto has a demo, so it sorts ahead of notaría, contador and inmobiliaria.
+ * Default daily-list giros: top tier only, so notarías never enter the
+ * digest or the drip. Arquitecto leads because they reply the most.
  */
-export const DIGEST_GIROS: readonly string[] = demoFirstGiros(TOP_TIER_GIROS);
+export const DIGEST_GIROS: readonly string[] = rotationGiros(TOP_TIER_GIROS);
 
 export type DigestQuery = {
   specialty: string;

@@ -350,6 +350,10 @@ describe("sector matching", () => {
     assert.equal(resolveSector("bufetes jurídicos").busqueda, "bufete jurídico");
     assert.equal(resolveSector("despachos jurídicos").demoSlug, "abogado");
     assert.equal(resolveSector("despachos jurídicos").busqueda, "abogado");
+    assert.equal(resolveSector("fertilidad").busqueda, "fertilidad");
+    assert.equal(resolveSector("fertilidad").lugar, "clínica");
+    assert.equal(resolveSector("clínicas de fertilidad").busqueda, "clínica de fertilidad");
+    assert.equal(resolveSector("reproducción asistida").busqueda, "reproducción asistida");
     assert.equal(resolveSector("notarías").demoSlug, undefined);
     assert.equal(resolveSector("notario público").demoSlug, undefined);
     assert.equal(resolveSector("notaría").busqueda, "notaría");
