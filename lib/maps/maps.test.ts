@@ -14,7 +14,7 @@ import {
   resolveBusinessCity,
   todoMexicoSearchCities,
 } from "@/lib/maps/cities";
-import { DEFAULT_GIRO, GIRO_CHIPS, cityHintForGiro, demoFirstGiros, giroHasDemo } from "@/lib/maps/giros";
+import { DEFAULT_GIRO, GIRO_CHIPS, cityHintForGiro, demoFirstGiros, giroHasDemo, rotationGiros } from "@/lib/maps/giros";
 import { isGiroMismatch } from "@/lib/maps/match";
 import { PLACES_FIELD_MASK, searchPlaces } from "@/lib/maps/places";
 import { leadDraftToInsert } from "@/lib/maps/persist";
@@ -463,17 +463,33 @@ describe("giro chips", () => {
       GIRO_CHIPS.filter((chip) => chip.tier === "alta").map((chip) => chip.query),
       [
         "abogado",
+        "dentista",
+        "ortodoncista",
         "clínica estética",
         "médico estético",
-        "salón de eventos",
+        "cirujano plástico",
+        "dermatólogo",
+        "oftalmólogo",
+        "arquitecto",
         "constructora",
         "cocinas integrales",
-        "notaría",
-        "contador",
-        "arquitecto",
-        "inmobiliaria",
       ],
     );
+    assert.deepEqual(
+      GIRO_CHIPS.filter((chip) => chip.tier === "media").map((chip) => chip.query),
+      [
+        "salón de eventos",
+        "inmobiliaria",
+        "contador",
+        "fertilidad",
+        "colegio",
+        "nutriólogo",
+        "fisioterapeuta",
+        "veterinario",
+        "psicólogo",
+      ],
+    );
+    assert.equal(GIRO_CHIPS.some((chip) => chip.query === "notaría"), false);
     assert.equal(giroHasDemo("abogado"), true);
     assert.equal(giroHasDemo("clínica estética"), true);
     assert.equal(giroHasDemo("cocinas integrales"), true);
@@ -482,15 +498,18 @@ describe("giro chips", () => {
     assert.equal(giroHasDemo("cirujano plástico"), true);
     assert.equal(giroHasDemo("notaría"), false);
     assert.equal(giroHasDemo("contador"), false);
+    assert.equal(giroHasDemo("fertilidad"), false);
     assert.equal(giroHasDemo("inmobiliaria"), false);
     assert.equal(giroHasDemo("colegio"), false);
     assert.deepEqual(cityHintForGiro("abogado"), ["Monterrey", "Guadalajara", "CDMX"]);
-    assert.equal(cityHintForGiro("dentista"), null);
-    const ordered = demoFirstGiros(
-      GIRO_CHIPS.filter((chip) => chip.tier === "alta").map((chip) => chip.query),
-    );
-    assert.ok(ordered.indexOf("arquitecto") < ordered.indexOf("notaría"));
+    assert.deepEqual(cityHintForGiro("dentista"), ["Monterrey", "Guadalajara", "CDMX"]);
+    assert.equal(cityHintForGiro("psicólogo"), null);
+    const alta = GIRO_CHIPS.filter((chip) => chip.tier === "alta").map((chip) => chip.query);
+    const ordered = demoFirstGiros(alta);
     assert.equal(ordered[0], "abogado");
+    assert.equal(ordered.includes("notaría"), false);
+    assert.ok(ordered.indexOf("arquitecto") < ordered.indexOf("dermatólogo"));
+    assert.equal(rotationGiros(alta)[0], "arquitecto");
   });
 });
 

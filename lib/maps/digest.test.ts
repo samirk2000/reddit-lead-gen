@@ -49,11 +49,13 @@ describe("daily list plan", () => {
     assert.ok(nationwide.every((query) => TODO_MEXICO_CITIES.includes(query.city as (typeof TODO_MEXICO_CITIES)[number])));
     assert.ok(nationwide.every((query) => DIGEST_GIROS.includes(query.specialty)));
     assert.equal(nationwide.some((query) => query.city === "Hermosillo"), false);
-    assert.equal(DIGEST_GIROS[0], "abogado");
-    assert.equal(DIGEST_GIROS.includes("dentista"), false);
-    assert.ok(DIGEST_GIROS.indexOf("arquitecto") < DIGEST_GIROS.indexOf("notaría"));
-    const notariaAt = DIGEST_GIROS.indexOf("notaría");
-    assert.ok(DIGEST_GIROS.slice(0, notariaAt).every((giro) => giroHasDemo(giro)));
+    assert.equal(DIGEST_GIROS[0], "arquitecto");
+    assert.equal(DIGEST_GIROS.includes("dentista"), true);
+    assert.equal(DIGEST_GIROS.includes("notaría"), false);
+    assert.equal(DIGEST_GIROS.includes("salón de eventos"), false);
+    const firstWithoutDemo = DIGEST_GIROS.findIndex((giro, index) => index > 0 && !giroHasDemo(giro));
+    assert.ok(firstWithoutDemo > 1);
+    assert.ok(DIGEST_GIROS.slice(1, firstWithoutDemo).every((giro) => giroHasDemo(giro)));
     assert.equal(parseDigestRequest(new URLSearchParams("city=Todo México")).city, undefined);
   });
 
