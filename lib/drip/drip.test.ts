@@ -121,6 +121,52 @@ describe("drip engine", () => {
     assert.match(String(calls[0]!.body.text), /<b>A<\/b>/);
     assert.equal(calls.some((call) => String(call.body.text).includes("Notaría")), false);
   });
+  it("un salto no cuenta y repone hasta seguir la cuota", async () => {
+    const now = { t: new Date("2026-10-17T12:00:00-06:00") };
+    const { m, deps, calls } = setup(now);
+    deps.fetchList = async () => [biz("A", "525521437788")];
+    deps.replenish = async () => [
+      { ...biz("Notaría Pública No. 4", "522221112233"), giro: "notaría", city: "Puebla" },
+      biz("B", "525546829131"),
+    ];
+    assert.equal(await tick(deps), "sent");
+    assert.match(String(calls[0]!.body.text), /^📍 1 de 19/);
+    const skipped = await onCallbackQuery(deps, cq(`drip:skip:${m.pending()!.k}`));
+    assert.equal(skipped.label, "⏭️ Saltado");
+    assert.equal(m.pending()?.name, "B");
+    const offered = calls.filter((call) => call.method === "sendMessage").map((call) => String(call.body.text));
+    assert.match(offered.at(-1) ?? "", /^📍 1 de 19/);
+    assert.equal(m.state.next_at, 0);
+    assert.equal((await deps.store.loadDay("2026-10-17")).sent.length, 0);
+    assert.equal((await deps.store.loadDay("2026-10-17")).recap_sent, false);
+  });
+  it("un saltar sin más negocios no deja el día cerrado en empty", async () => {
+    const now = { t: new Date("2026-10-17T12:00:00-06:00") };
+    const { m, deps } = setup(now);
+    deps.fetchList = async () => [biz("A", "525521437788")];
+    deps.replenish = async () => [];
+    assert.equal(await tick(deps), "sent");
+    await onCallbackQuery(deps, cq(`drip:skip:${m.pending()!.k}`));
+    assert.equal(m.pending(), null);
+    assert.equal(m.state.next_at, 0);
+    assert.equal(m.state.last_action_at, 0);
+    assert.equal(await tick(deps), "empty");
+    assert.equal((await deps.store.loadDay("2026-10-17")).recap_sent, false);
+    assert.equal(await tick(deps), "empty");
+  });
+  it("confirma y sigue pidiendo hasta la cuota", async () => {
+    const now = { t: new Date("2026-10-17T12:00:00-06:00") };
+    const { m, deps, calls } = setup(now);
+    deps.fetchList = async () => [biz("A", "525521437788")];
+    deps.replenish = async () => [biz("B", "525546829131")];
+    assert.equal(await tick(deps), "sent");
+    await onCallbackQuery(deps, cq(`drip:ok:${m.pending()!.k}`));
+    assert.equal(m.pending(), null);
+    now.t = new Date(now.t.getTime() + 6 * 60_000);
+    assert.equal(await tick(deps), "sent");
+    assert.equal(m.pending()?.name, "B");
+    assert.match(String(calls.at(-1)!.body.text), /^📍 2 de 19/);
+  });
   it("commands", async () => {
     const now = { t: new Date("2026-10-13T12:00:00-06:00") };
     const { m, deps } = setup(now);

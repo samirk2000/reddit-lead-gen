@@ -24,6 +24,8 @@ export type DripDeps = {
   fetchList: () => Promise<DigestBusiness[]>;
   markStatus: (b: { place_id?: string; phone?: string; name?: string }, status: "contactado" | "descartado") => Promise<void>;
   tg: (method: string, body: Record<string, unknown>) => Promise<{ message_id?: number } | null>;
+  /** Next giro/city window when the current list cannot fill today's quota. */
+  replenish?: () => Promise<DigestBusiness[]>;
   now?: () => Date;
   rnd?: () => number;
   log?: (...a: unknown[]) => void;
@@ -33,28 +35,51 @@ const html = (text: string, extra: Record<string, unknown> = {}) => ({
   chat_id: DRIP_OWNER_CHAT, text, parse_mode: "HTML", disable_web_page_preview: true, ...extra,
 });
 
-async function nextBusiness(d: DripDeps, day: DripDay, state: DripState): Promise<DigestBusiness | null> {
+const MAX_REPLENISH = 2;
+
+async function considerBusiness(
+  d: DripDeps,
+  day: DripDay,
+  state: DripState,
+  b: DigestBusiness,
+): Promise<DigestBusiness | null> {
   const log = d.log ?? console.log;
-  for (const b of await d.fetchList()) {
-    const k = key10(b.phone);
-    const seen = [...day.sent, ...day.skipped, ...day.user_skipped];
-    if (seen.some((s) => s.k === k) || state.pending?.k === k) continue;
-    const skip = (why: string) => { day.skipped.push({ k, name: b.name, at: (d.now ?? (() => new Date()))().getTime(), why }); log(`[drip] omitido ${b.name}: ${why}`); };
-    if (isNotariaBusiness({ name: b.name, giro: b.giro })) { skip("notaría"); continue; }
-    if (!normalizeMx(b.phone)) { skip("número inválido"); continue; }
-    const blocked = await d.store.isBlocked(k, b.place_id);
-    if (blocked) { skip(blocked); continue; }
-    if (!openerFrom(b)) { skip("sin texto de apertura"); continue; }
-    const lw = likelyLandline(b.phone);
-    if (lw) {
-      skip(lw);
-      await d.store.block(k, `sin WhatsApp: ${lw}`);
-      await d.markStatus(b, "descartado").catch(() => undefined);
-      continue;
-    }
-    return b;
+  const k = key10(b.phone);
+  const seen = [...day.sent, ...day.skipped, ...day.user_skipped];
+  if (seen.some((s) => s.k === k) || state.pending?.k === k) return null;
+  const skip = (why: string) => { day.skipped.push({ k, name: b.name, at: (d.now ?? (() => new Date()))().getTime(), why }); log(`[drip] omitido ${b.name}: ${why}`); };
+  // Skips, no-WhatsApp and notarías stay out of day.sent, so they do not fill the quota.
+  if (isNotariaBusiness({ name: b.name, giro: b.giro })) { skip("notaría"); return null; }
+  if (!normalizeMx(b.phone)) { skip("número inválido"); return null; }
+  const blocked = await d.store.isBlocked(k, b.place_id);
+  if (blocked) { skip(blocked); return null; }
+  if (!openerFrom(b)) { skip("sin texto de apertura"); return null; }
+  const lw = likelyLandline(b.phone);
+  if (lw) {
+    skip(lw);
+    await d.store.block(k, `sin WhatsApp: ${lw}`);
+    await d.markStatus(b, "descartado").catch(() => undefined);
+    return null;
   }
-  return null;
+  return b;
+}
+
+async function nextBusiness(d: DripDeps, day: DripDay, state: DripState): Promise<DigestBusiness | null> {
+  const seenPlaces = new Set<string>();
+  let pool = await d.fetchList();
+  let replenishes = 0;
+  while (true) {
+    for (const b of pool) {
+      if (seenPlaces.has(b.place_id)) continue;
+      seenPlaces.add(b.place_id);
+      const chosen = await considerBusiness(d, day, state, b);
+      if (chosen) return chosen;
+    }
+    if (!d.replenish || replenishes >= MAX_REPLENISH) return null;
+    replenishes += 1;
+    pool = await d.replenish();
+    if (pool.length === 0) return null;
+  }
 }
 
 /** Offers the next business. Returns "pending" | "sent" | "empty" | "conflict". */
@@ -64,23 +89,41 @@ export async function sendNext(d: DripDeps, manual = false): Promise<"pending" |
   if (state.pending) return "pending";
   const date = localTime(now).date;
   const day = await d.store.loadDay(date);
+  if (day.sent.length >= quotaFor(date)) return "empty";
   // Claim first so a concurrent cron/webhook cannot double-send.
+  const previous = { last_action_at: state.last_action_at, next_at: state.next_at };
   const claim: DripState = { ...state, last_action_at: now.getTime(), next_at: now.getTime() + jitterMs(d.rnd) };
   if (!(await d.store.saveState(claim, version))) return "conflict";
-  const b = await nextBusiness(d, day, state);
-  await d.store.saveDay(day);
-  if (!b) return "empty";
-  const k = key10(b.phone);
-  const n = day.sent.length + 1;
-  const q = quotaFor(date);
-  const msg = await d.tg("sendMessage", html(formatBusiness(b, varyOpener(openerFrom(b) ?? "", d.rnd), n, q, manual), { reply_markup: dripKeyboard(k) }));
+  let offered = false;
+  try {
+    const b = await nextBusiness(d, day, state);
+    await d.store.saveDay(day);
+    if (!b) return "empty";
+    const k = key10(b.phone);
+    const n = day.sent.length + 1;
+    const q = quotaFor(date);
+    const msg = await d.tg("sendMessage", html(formatBusiness(b, varyOpener(openerFrom(b) ?? "", d.rnd), n, q, manual), { reply_markup: dripKeyboard(k) }));
+    const after = await d.store.loadState();
+    await d.store.saveState({
+      ...after.state,
+      pending: { k, name: b.name, city: b.city, giro: b.giro, phone: b.phone, place_id: b.place_id, date, n, q, at: now.getTime(), message_id: msg?.message_id ?? null },
+      last_action_at: now.getTime(), next_at: 0,
+    }, after.version);
+    offered = true;
+    return "sent";
+  } finally {
+    if (!offered) await releaseClaim(d, previous);
+  }
+}
+
+async function releaseClaim(d: DripDeps, previous: { last_action_at: number; next_at: number }): Promise<void> {
   const after = await d.store.loadState();
+  if (after.state.pending) return;
   await d.store.saveState({
     ...after.state,
-    pending: { k, name: b.name, city: b.city, giro: b.giro, phone: b.phone, place_id: b.place_id, date, n, q, at: now.getTime(), message_id: msg?.message_id ?? null },
-    last_action_at: now.getTime(), next_at: 0,
+    last_action_at: previous.last_action_at,
+    next_at: previous.next_at,
   }, after.version);
-  return "sent";
 }
 
 export async function recap(d: DripDeps, date: string, reason = ""): Promise<void> {
@@ -100,9 +143,9 @@ export async function tick(d: DripDeps): Promise<string> {
   const decision = decideTick(state, day, now);
   if (decision.action === "recap") { await recap(d, l.date, decision.reason); return "recap"; }
   if (decision.action === "none") return decision.reason;
-  const r = await sendNext(d);
-  if (r === "empty") { await recap(d, l.date, "se acabó la lista"); return "empty"; }
-  return r;
+  // An empty list used to recap immediately and set recap_sent, so a Saltar
+  // with nobody left froze the day as "empty" before the quota was met.
+  return sendNext(d);
 }
 
 export type CallbackResult = { answer: string | null; label: string | null };
