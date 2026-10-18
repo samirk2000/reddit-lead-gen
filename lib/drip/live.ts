@@ -1,6 +1,7 @@
 /** Production wiring for the drip: Supabase store, Telegram Bot API, daily list, mark-status. */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DigestBusiness } from "@/lib/maps/digest";
+import { isNotariaBusiness } from "../maps/notaria";
 import { markStatusDecision } from "@/lib/maps/mark-status";
 import { resolveRedditWebOwnerId } from "@/lib/reddit-web/owner";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -83,7 +84,7 @@ export async function createLiveDripDeps(origin: string): Promise<DripDeps> {
       const r = await fetch(`${origin}/api/maps/daily-list`, { headers: { authorization: `Bearer ${digestSecret}` }, signal: AbortSignal.timeout(55_000) });
       const j = (await r.json()) as { ok?: boolean; businesses?: DigestBusiness[]; error?: string };
       if (!j.ok) throw new Error(`daily-list: ${j.error ?? r.status}`);
-      cache = j.businesses ?? [];
+      cache = (j.businesses ?? []).filter((business) => !isNotariaBusiness({ name: business.name, giro: business.giro }));
       return cache;
     },
     markStatus: async (b, status) => {

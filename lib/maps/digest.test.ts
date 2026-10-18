@@ -14,6 +14,7 @@ import {
   storedLeadMatchesGiro,
 } from "@/lib/maps/digest";
 import { giroHasDemo } from "@/lib/maps/giros";
+import { isNotariaBusiness } from "@/lib/maps/notaria";
 import { buildLeadDrafts } from "@/lib/maps/qualify";
 import type { MapsLeadDraft } from "@/lib/maps/types";
 
@@ -52,6 +53,21 @@ describe("daily list plan", () => {
     assert.equal(DIGEST_GIROS[0], "arquitecto");
     assert.equal(DIGEST_GIROS.includes("dentista"), true);
     assert.equal(DIGEST_GIROS.includes("notaría"), false);
+    assert.deepEqual(
+      digestQueries({
+        date: "2026-10-15",
+        city: "Puebla",
+        giros: ["notaría", "notarías", "abogado"],
+        limit: 8,
+      }),
+      [{ specialty: "abogado", city: "Puebla" }],
+    );
+    assert.equal(isNotariaBusiness({ specialty: "notaría", name: "Notaría Pública No. 4" }), true);
+    assert.equal(isNotariaBusiness({ giro: "notaría", name: "Notaría Pública No. 51" }), true);
+    assert.equal(isNotariaBusiness({ name: "Notaría Pública No. 7", specialty: "abogado" }), true);
+    assert.equal(isNotariaBusiness({ name: "Notaría Pública No. 10", giro: "abogado" }), true);
+    assert.equal(isNotariaBusiness({ specialty: "notario público", name: "García" }), true);
+    assert.equal(isNotariaBusiness({ name: "Bufete García", specialty: "abogado" }), false);
     assert.equal(DIGEST_GIROS.includes("salón de eventos"), false);
     const firstWithoutDemo = DIGEST_GIROS.findIndex((giro, index) => index > 0 && !giroHasDemo(giro));
     assert.ok(firstWithoutDemo > 1);
@@ -275,5 +291,68 @@ describe("daily list selection", () => {
       ["firma"],
     );
     assert.equal(drafts[0]?.city, "Monterrey");
+  });
+
+  it("no genera notarías ni por giro ni por nombre", async () => {
+    let calls = 0;
+    const { drafts, placesRequests } = await collectDigestDrafts({
+      queries: [
+        { specialty: "notaría", city: "Puebla" },
+        { specialty: "abogado", city: "Tijuana" },
+      ],
+      excludedPlaceIds: new Set(),
+      maxRequests: 2,
+      targetCount: 5,
+      search: async (textQuery) => {
+        calls += 1;
+        assert.equal(textQuery.includes("notaría"), false);
+        return {
+          pages: 1,
+          places: [
+            {
+              id: "n4",
+              displayName: { text: "Notaría Pública No. 4" },
+              primaryType: "lawyer",
+              nationalPhoneNumber: "222 111 2233",
+              formattedAddress: "Centro, Puebla, Pue., México",
+            },
+            {
+              id: "n10",
+              displayName: { text: "Notaría Pública No. 10" },
+              primaryType: "lawyer",
+              nationalPhoneNumber: "664 111 2244",
+              formattedAddress: "Zona Centro, Tijuana, B.C., México",
+            },
+            {
+              id: "firma",
+              displayName: { text: "Bufete García" },
+              primaryType: "lawyer",
+              nationalPhoneNumber: "664 111 2255",
+              formattedAddress: "Zona Centro, Tijuana, B.C., México",
+            },
+          ],
+        };
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(placesRequests, 1);
+    assert.deepEqual(drafts.map((draft) => draft.name), ["Bufete García"]);
+
+    const { drafts: labeled } = buildLeadDrafts(
+      [
+        {
+          id: "despacho",
+          displayName: { text: "Despacho Siete" },
+          nationalPhoneNumber: "222 111 2266",
+          formattedAddress: "Centro, Puebla, Pue., México",
+        },
+      ],
+      "notaría",
+      "Puebla",
+    );
+    const labeledDraft = labeled[0];
+    assert.ok(labeledDraft);
+    assert.equal(labeledDraft.specialty, "notaría");
+    assert.equal(acceptDigestDraft(labeledDraft, new Set()), false);
   });
 });

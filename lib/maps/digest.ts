@@ -1,6 +1,7 @@
 import { TODO_MEXICO_CITIES, canonicalCityQuery, commonCityName, isTodoMexico } from "@/lib/maps/cities";
 import { MapsError } from "@/lib/maps/errors";
 import { TOP_TIER_GIROS, rotationGiros } from "@/lib/maps/giros";
+import { isNotariaBusiness } from "@/lib/maps/notaria";
 import { buildOpeningMessage, whatsAppHref } from "@/lib/maps/message";
 import { isGiroMismatch } from "@/lib/maps/match";
 import { buildLeadDrafts } from "@/lib/maps/qualify";
@@ -119,7 +120,9 @@ export function digestQueries(options: {
 }): DigestQuery[] {
   const giros = (
     options.giros && options.giros.length > 0 ? options.giros : DIGEST_GIROS
-  ).map((giro) => giro.trim().replace(/\s+/g, " ")).filter((giro) => giro.length > 0);
+  )
+    .map((giro) => giro.trim().replace(/\s+/g, " "))
+    .filter((giro) => giro.length > 0 && !isNotariaBusiness({ specialty: giro }));
   const cities =
     options.city && !isTodoMexico(options.city)
       ? [canonicalCityQuery(options.city)]
@@ -145,6 +148,7 @@ export function acceptDigestDraft(
   draft: MapsLeadDraft,
   excludedPlaceIds: ReadonlySet<string>,
 ): boolean {
+  if (isNotariaBusiness({ name: draft.name, specialty: draft.specialty })) return false;
   if (excludedPlaceIds.has(draft.placeId)) return false;
   if (!draft.whatsappE164) return false;
   if (draft.businessStatus === "CLOSED_TEMPORARILY") return false;
@@ -166,6 +170,7 @@ export async function collectDigestDrafts(input: {
   for (const query of input.queries) {
     if (chosen.length >= input.targetCount) break;
     if (placesRequests >= input.maxRequests) break;
+    if (isNotariaBusiness({ specialty: query.specialty })) continue;
     const result = await input.search(`${query.specialty} en ${query.city}`);
     const pages = Math.max(0, result.pages);
     placesRequests += pages;
