@@ -10,6 +10,7 @@ import {
   digestBusinessFromDraft,
   digestBusinessFromStored,
   digestQueries,
+  digestSearchCursor,
   parseDigestRequest,
   storedLeadMatchesGiro,
 } from "@/lib/maps/digest";
@@ -68,6 +69,16 @@ describe("daily list plan", () => {
     assert.equal(isNotariaBusiness({ name: "Notaría Pública No. 10", giro: "abogado" }), true);
     assert.equal(isNotariaBusiness({ specialty: "notario público", name: "García" }), true);
     assert.equal(isNotariaBusiness({ name: "Bufete García", specialty: "abogado" }), false);
+    const firstWindow = digestQueries({ date: "2026-10-17", limit: 8 });
+    const nextWindow = digestQueries({ date: "2026-10-17", limit: 8, cursor: digestSearchCursor("2026-10-17", 1) });
+    assert.deepEqual(digestQueries({ date: "2026-10-17", limit: 8, cursor: digestSearchCursor("2026-10-17", 0) }), firstWindow);
+    assert.equal(nextWindow.length, 8);
+    assert.equal(nextWindow.some((query) => firstWindow.some((first) => first.city === query.city && first.specialty === query.specialty)), false);
+    assert.equal(nextWindow.some((query) => query.specialty === "notaría"), false);
+    assert.deepEqual(
+      digestQueries({ date: "2026-10-17", city: "Puebla", giros: ["notaría", "abogado"], limit: 8 }),
+      [{ specialty: "abogado", city: "Puebla" }],
+    );
     assert.equal(DIGEST_GIROS.includes("salón de eventos"), false);
     const firstWithoutDemo = DIGEST_GIROS.findIndex((giro, index) => index > 0 && !giroHasDemo(giro));
     assert.ok(firstWithoutDemo > 1);
@@ -354,5 +365,8 @@ describe("daily list selection", () => {
     assert.ok(labeledDraft);
     assert.equal(labeledDraft.specialty, "notaría");
     assert.equal(acceptDigestDraft(labeledDraft, new Set()), false);
+    const kept = drafts[0];
+    assert.ok(kept);
+    assert.equal(acceptDigestDraft({ ...kept, name: "Notaría Pública No. 10", specialty: "abogado" }, new Set()), false);
   });
 });

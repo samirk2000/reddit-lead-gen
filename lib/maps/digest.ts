@@ -112,11 +112,19 @@ export function mexicoCityDateISO(now: Date = new Date()): string {
  * With no city and no giros, each Mexico City day advances eight pairs
  * (the Places cap) through top-tier giros (demos first) and the Todo México metros.
  */
+/** Absolute pair index for a day's window. Window 0 matches the date rotation. */
+export function digestSearchCursor(date: string, window = 0): number {
+  const step = window > 0 ? window : 0;
+  return dayNumber(date) * DIGEST_PLACES_REQUEST_CAP + step * DIGEST_PLACES_REQUEST_CAP;
+}
+
 export function digestQueries(options: {
   date: string;
   city?: string;
   giros?: readonly string[];
   limit: number;
+  /** Next refill continues here. Omitted means today's first window. */
+  cursor?: number;
 }): DigestQuery[] {
   const giros = (
     options.giros && options.giros.length > 0 ? options.giros : DIGEST_GIROS
@@ -130,11 +138,9 @@ export function digestQueries(options: {
   const pairs = interleave(giros, cities);
   if (pairs.length === 0 || options.limit <= 0) return [];
   // Step a full request-cap window each calendar day so tomorrow does not
-  // repeat today's Places queries.
-  const offset = positiveMod(
-    dayNumber(options.date) * DIGEST_PLACES_REQUEST_CAP,
-    pairs.length,
-  );
+  // repeat today's Places queries. A refill passes the following cursor.
+  const cursor = options.cursor ?? digestSearchCursor(options.date);
+  const offset = positiveMod(cursor, pairs.length);
   const rotated = [...pairs.slice(offset), ...pairs.slice(0, offset)];
   return rotated.slice(0, options.limit);
 }

@@ -1,11 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { MISSING_PLACES_KEY_MESSAGE } from "@/lib/maps/constants";
 import {
   DIGEST_PLACES_REQUEST_CAP,
   DIGEST_SKIP_STATUSES,
+  DIGEST_MAX_COUNT,
   collectDigestDrafts,
   digestBusinessFromStored,
   digestQueries,
+  digestSearchCursor,
   storedLeadMatchesGiro,
   mexicoCityDateISO,
   parseDigestRequest,
@@ -30,13 +33,16 @@ export const maxDuration = 60;
  * Ready-to-send WhatsApp list for a Telegram digest.
  *
  * GET /api/maps/daily-list?count=20&city=&giros=
+ * GET /api/maps/daily-list?all=1  — every business saved today, no new search
+ * GET /api/maps/daily-list?more=1 — the next giro/city window (drip refill)
  * Authorization: Bearer <MAPS_DIGEST_SECRET>
  *
  * At most {@link DIGEST_PLACES_REQUEST_CAP} Text Search calls, one page each.
  * Repeating the default call the same Mexico City day returns the stored list
  * and does not call Places again. Notarías are dropped even when that cache
  * was built before they left the rotation; if that leaves the list short,
- * the same call fills the rest from the current giros.
+ * the same call fills the rest from the current giros. `more=1` continues
+ * the same rotation.
  */
 export async function GET(request: NextRequest) {
   const expected = process.env.MAPS_DIGEST_SECRET?.trim() ?? "";
@@ -53,6 +59,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const more = request.nextUrl.searchParams.get("more") === "1";
+    const all = request.nextUrl.searchParams.get("all") === "1";
     const parsed = parseDigestRequest(request.nextUrl.searchParams);
     const apiKey = process.env.GOOGLE_PLACES_API_KEY?.trim() ?? "";
     if (!apiKey) {
@@ -69,7 +77,39 @@ export async function GET(request: NextRequest) {
     let cached: DigestBusiness[] = [];
     if (!custom) {
       cached = omitNotarias(await loadCachedBusinesses(supabase, userId, date));
-      if (cached.length >= parsed.count) {
+      if (more) {
+        const pulled = await pullNextWindow(supabase, {
+          date,
+          apiKey,
+          userId,
+          excluded,
+          source,
+          cachedCount: cached.length,
+        });
+        console.log("[maps-digest] refill", { date, added: pulled.businesses.length, placesRequests: pulled.placesRequests });
+        return NextResponse.json({
+          ok: true,
+          date,
+          cached: false,
+          refill: true,
+          requested: parsed.count,
+          places_requests: pulled.placesRequests,
+          places_request_cap: DIGEST_PLACES_REQUEST_CAP,
+          businesses: pulled.businesses,
+        });
+      }
+      if (all && cached.length > 0) {
+        return NextResponse.json({
+          ok: true,
+          date,
+          cached: true,
+          requested: cached.length,
+          places_requests: 0,
+          places_request_cap: DIGEST_PLACES_REQUEST_CAP,
+          businesses: sortBusinesses(cached),
+        });
+      }
+      if (!all && cached.length >= parsed.count) {
         console.log("[maps-digest] cache hit", { date, count: parsed.count });
         return NextResponse.json({
           ok: true,
@@ -83,12 +123,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const queries = digestQueries({
-      date,
-      limit: DIGEST_PLACES_REQUEST_CAP,
-      ...(parsed.city ? { city: parsed.city } : {}),
-      ...(parsed.giros ? { giros: parsed.giros } : {}),
-    });
+    const cursor = custom ? null : await loadRefillCursor(supabase, date, cached.length > 0);
+    const queries = cursor?.giveUp
+      ? []
+      : digestQueries({
+          date,
+          limit: DIGEST_PLACES_REQUEST_CAP,
+          ...(cursor ? { cursor: cursor.cursor } : {}),
+          ...(parsed.city ? { city: parsed.city } : {}),
+          ...(parsed.giros ? { giros: parsed.giros } : {}),
+        });
     const { drafts, placesRequests } = await collectDigestDrafts({
       queries,
       excludedPlaceIds: excluded,
@@ -100,6 +144,9 @@ export async function GET(request: NextRequest) {
 
     if (drafts.length > 0) {
       await persistDigest(supabase, userId, date, source, drafts);
+    }
+    if (cursor && !cursor.giveUp) {
+      await saveRefillCursor(supabase, date, cursor.cursor + queries.length, drafts.length === 0 ? cursor.empty + 1 : 0);
     }
 
     const fresh = drafts.flatMap((draft) => {
@@ -120,7 +167,8 @@ export async function GET(request: NextRequest) {
       return business ? [business] : [];
     });
 
-    const businesses = sortBusinesses(omitNotarias([...cached, ...fresh])).slice(0, parsed.count);
+    const merged = sortBusinesses(omitNotarias([...cached, ...fresh]));
+    const businesses = all ? merged : merged.slice(0, parsed.count);
     console.log("[maps-digest] ok", {
       date,
       source,
@@ -142,6 +190,115 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return fail(error);
   }
+}
+
+const REFILL_EMPTY_LIMIT = 2;
+
+// query_cursor lives on telegram_drip_state, which is not in the generated Database types yet.
+type Loose = SupabaseClient<any>;
+
+function dripDb(supabase: SupabaseServiceClient): Loose {
+  return supabase as unknown as Loose;
+}
+
+type RefillCursor = { cursor: number; empty: number; giveUp: boolean };
+
+async function loadRefillCursor(
+  supabase: SupabaseServiceClient,
+  date: string,
+  cacheExists: boolean,
+): Promise<RefillCursor> {
+  const row = await dripDb(supabase)
+    .from("telegram_drip_state")
+    .select("query_cursor, cursor_empty, cursor_day")
+    .eq("id", 1)
+    .maybeSingle();
+  if (row.error) failDb(row.error, "drip cursor");
+  const storedCursor = Number(row.data?.query_cursor) || 0;
+  const sameDay = row.data?.cursor_day === date;
+  const empty = sameDay ? Number(row.data?.cursor_empty) || 0 : 0;
+  const cursor = storedCursor > 0 ? storedCursor : digestSearchCursor(date, cacheExists ? 1 : 0);
+  return { cursor, empty, giveUp: empty >= REFILL_EMPTY_LIMIT };
+}
+
+async function saveRefillCursor(
+  supabase: SupabaseServiceClient,
+  date: string,
+  cursor: number,
+  empty: number,
+): Promise<void> {
+  const saved = await dripDb(supabase)
+    .from("telegram_drip_state")
+    .update({
+      query_cursor: cursor,
+      cursor_empty: empty,
+      cursor_day: date,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", 1);
+  if (saved.error) failDb(saved.error, "drip cursor save");
+}
+
+async function pullNextWindow(
+  supabase: SupabaseServiceClient,
+  input: {
+    date: string;
+    apiKey: string;
+    userId: string;
+    excluded: Set<string>;
+    source: MapsDigestSource;
+    cachedCount: number;
+  },
+): Promise<{ businesses: DigestBusiness[]; placesRequests: number }> {
+  const cursor = await loadRefillCursor(supabase, input.date, input.cachedCount > 0);
+  if (cursor.giveUp) return { businesses: [], placesRequests: 0 };
+  const queries = digestQueries({
+    date: input.date,
+    limit: DIGEST_PLACES_REQUEST_CAP,
+    cursor: cursor.cursor,
+  });
+  const { drafts, placesRequests } = await collectDigestDrafts({
+    queries,
+    excludedPlaceIds: input.excluded,
+    maxRequests: DIGEST_PLACES_REQUEST_CAP,
+    targetCount: DIGEST_MAX_COUNT,
+    search: (textQuery) =>
+      searchPlaces(textQuery, input.apiKey, fetch, { maxPages: 1, timeoutMs: 12_000 }),
+  });
+  if (drafts.length > 0) {
+    await persistDigest(supabase, input.userId, input.date, input.source, drafts);
+  }
+  await saveRefillCursor(
+    supabase,
+    input.date,
+    cursor.cursor + queries.length,
+    drafts.length === 0 ? cursor.empty + 1 : 0,
+  );
+  return { businesses: omitNotarias(draftsToBusinesses(drafts)), placesRequests };
+}
+
+function draftsToBusinesses(drafts: readonly MapsLeadDraft[]): DigestBusiness[] {
+  return drafts.flatMap((draft) => {
+    const business = digestBusinessFromStored({
+      place_id: draft.placeId,
+      name: draft.name,
+      specialty: draft.specialty,
+      city: draft.city,
+      rating: draft.rating,
+      user_rating_count: draft.userRatingCount,
+      whatsapp_e164: draft.whatsappE164,
+      google_maps_uri: draft.googleMapsUri,
+      phone_national: draft.phoneNational,
+      phone_international: draft.phoneInternational,
+      lead_reason: draft.leadReason,
+      business_status: draft.businessStatus,
+    });
+    return business ? [business] : [];
+  });
+}
+
+function omitNotarias(items: readonly DigestBusiness[]): DigestBusiness[] {
+  return items.filter((item) => !isNotariaBusiness({ name: item.name, giro: item.giro }));
 }
 
 async function loadExcludedPlaceIds(
@@ -239,10 +396,6 @@ async function persistDigest(
   if (logged.error) failDb(logged.error, "digest log");
 }
 
-function omitNotarias(items: readonly DigestBusiness[]): DigestBusiness[] {
-  return items.filter((item) => !isNotariaBusiness({ name: item.name, giro: item.giro }));
-}
-
 function sortBusinesses(items: DigestBusiness[]): DigestBusiness[] {
   return [...items].sort(
     (a, b) => b.score - a.score || a.name.localeCompare(b.name, "es"),
@@ -259,6 +412,9 @@ function failDb(error: { code?: string; message?: string }, context: string): ne
 }
 
 function digestFailureMessage(error: { code?: string; message?: string }): string {
+  if (error.code === "42703" || /query_cursor|cursor_empty|cursor_day/i.test(error.message ?? "")) {
+    return "Falta aplicar supabase/migrations/20261018_drip_refill.sql en el SQL Editor de Supabase.";
+  }
   if (error.code === "23514" || /maps_digest_log/i.test(error.message ?? "")) {
     return "Falta aplicar supabase/migrations/20261007_maps_digest.sql en el SQL Editor de Supabase.";
   }

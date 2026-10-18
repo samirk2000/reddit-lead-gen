@@ -75,17 +75,27 @@ export async function createLiveDripDeps(origin: string): Promise<DripDeps> {
   const userId = await resolveRedditWebOwnerId(createServiceClient());
   const digestSecret = process.env.MAPS_DIGEST_SECRET?.trim() ?? "";
   let cache: DigestBusiness[] | null = null;
+  const loadBusinesses = async (path: string): Promise<DigestBusiness[]> => {
+    const r = await fetch(`${origin}${path}`, { headers: { authorization: `Bearer ${digestSecret}` }, signal: AbortSignal.timeout(55_000) });
+    const j = (await r.json()) as { ok?: boolean; businesses?: DigestBusiness[]; error?: string };
+    if (!j.ok) throw new Error(`daily-list: ${j.error ?? r.status}`);
+    return (j.businesses ?? []).filter((business) => !isNotariaBusiness({ name: business.name, giro: business.giro }));
+  };
   return {
     store: supabaseDripStore(db, userId),
     tg: telegramApi,
     log: (...a) => console.log(...a),
     fetchList: async () => {
       if (cache) return cache;
-      const r = await fetch(`${origin}/api/maps/daily-list`, { headers: { authorization: `Bearer ${digestSecret}` }, signal: AbortSignal.timeout(55_000) });
-      const j = (await r.json()) as { ok?: boolean; businesses?: DigestBusiness[]; error?: string };
-      if (!j.ok) throw new Error(`daily-list: ${j.error ?? r.status}`);
-      cache = (j.businesses ?? []).filter((business) => !isNotariaBusiness({ name: business.name, giro: business.giro }));
+      cache = await loadBusinesses("/api/maps/daily-list?all=1");
       return cache;
+    },
+    replenish: async () => {
+      const added = await loadBusinesses("/api/maps/daily-list?more=1");
+      const seen = new Set((cache ?? []).map((business) => business.place_id));
+      const fresh = added.filter((business) => !seen.has(business.place_id));
+      cache = [...(cache ?? []), ...fresh];
+      return fresh;
     },
     markStatus: async (b, status) => {
       if (!b.place_id) return;
